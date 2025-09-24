@@ -306,7 +306,7 @@ func TestPullIntegration(t *testing.T) {
 	}
 
 	// Test GetManifest
-	manifest, annotations, err := client.GetManifest(ctx, imageRef)
+	manifest, annotations, _, err := client.GetManifest(ctx, imageRef)
 	if err != nil {
 		t.Errorf("failed to get manifest: %v", err)
 		return

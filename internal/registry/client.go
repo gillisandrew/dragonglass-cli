@@ -299,15 +299,15 @@ func (c *Client) Pull(ctx context.Context, imageRef string, destDir string, prog
 }
 
 // GetManifest fetches just the manifest for an image reference
-func (c *Client) GetManifest(ctx context.Context, imageRef string) (*ocispec.Manifest, map[string]string, error) {
+func (c *Client) GetManifest(ctx context.Context, imageRef string) (*ocispec.Manifest, map[string]string, string, error) {
 	ref, err := registry.ParseReference(imageRef)
 	if err != nil {
-		return nil, nil, fmt.Errorf("invalid image reference %s: %w", imageRef, err)
+		return nil, nil, "", fmt.Errorf("invalid image reference %s: %w", imageRef, err)
 	}
 
 	repo, err := remote.NewRepository(ref.Registry + "/" + ref.Repository)
 	if err != nil {
-		return nil, nil, fmt.Errorf("failed to create repository: %w", err)
+		return nil, nil, "", fmt.Errorf("failed to create repository: %w", err)
 	}
 
 	// Configure ORAS authentication
@@ -316,26 +316,26 @@ func (c *Client) GetManifest(ctx context.Context, imageRef string) (*ocispec.Man
 	// Resolve and fetch manifest
 	manifestDesc, err := repo.Resolve(ctx, ref.Reference)
 	if err != nil {
-		return nil, nil, fmt.Errorf("failed to resolve %s: %w", imageRef, err)
+		return nil, nil, "", fmt.Errorf("failed to resolve %s: %w", imageRef, err)
 	}
 
 	manifestReader, err := repo.Fetch(ctx, manifestDesc)
 	if err != nil {
-		return nil, nil, fmt.Errorf("failed to fetch manifest: %w", err)
+		return nil, nil, "", fmt.Errorf("failed to fetch manifest: %w", err)
 	}
 	defer manifestReader.Close()
 
 	manifestData, err := io.ReadAll(manifestReader)
 	if err != nil {
-		return nil, nil, fmt.Errorf("failed to read manifest: %w", err)
+		return nil, nil, "", fmt.Errorf("failed to read manifest: %w", err)
 	}
 
 	var manifest ocispec.Manifest
 	if err := json.Unmarshal(manifestData, &manifest); err != nil {
-		return nil, nil, fmt.Errorf("failed to parse manifest: %w", err)
+		return nil, nil, "", fmt.Errorf("failed to parse manifest: %w", err)
 	}
 
-	return &manifest, manifest.Annotations, nil
+	return &manifest, manifest.Annotations, manifestDesc.Digest.String(), nil
 }
 
 // ValidateAccess checks if we can access the registry and a specific repository

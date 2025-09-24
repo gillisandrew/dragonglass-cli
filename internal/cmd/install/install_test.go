@@ -288,7 +288,7 @@ func TestUpdateLockfile(t *testing.T) {
 			lf, lockfilePath := tt.setupLockfile()
 			defer os.RemoveAll(filepath.Dir(lockfilePath))
 
-			err := updateLockfile(lf, lockfilePath, tt.metadata, tt.imageRef, tt.digest, tt.installPath)
+			err := updateLockfile(lf, lockfilePath, tt.metadata, tt.imageRef, tt.digest)
 
 			if tt.expectError {
 				if err == nil {

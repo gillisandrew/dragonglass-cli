@@ -77,7 +77,6 @@ func TestLockfileValidation(t *testing.T) {
 						Name:         "",
 						OCIReference: "ghcr.io/test/plugin:v1",
 						OCIDigest:    "sha256:abc123",
-						InstallPath:  "/path/to/plugin",
 					},
 				},
 			},
@@ -93,7 +92,6 @@ func TestLockfileValidation(t *testing.T) {
 						Name:         "test-plugin",
 						OCIReference: "",
 						OCIDigest:    "sha256:abc123",
-						InstallPath:  "/path/to/plugin",
 					},
 				},
 			},
@@ -129,8 +127,6 @@ func TestAddPlugin(t *testing.T) {
 		Version:      "1.0.0",
 		OCIReference: "ghcr.io/test/plugin:v1.0.0",
 		OCIDigest:    "sha256:abc123def456",
-		ImageHash:    "sha256:def456abc123",
-		InstallPath:  "/vault/.obsidian/plugins/test-plugin",
 		Metadata: PluginMetadata{
 			Author:      "Test Author",
 			Description: "A test plugin",
@@ -140,7 +136,7 @@ func TestAddPlugin(t *testing.T) {
 	// Wait a bit to ensure timestamp difference
 	time.Sleep(10 * time.Millisecond)
 
-	err := lockfile.AddPlugin(plugin)
+	err := lockfile.AddPlugin("test-plugin", plugin)
 	if err != nil {
 		t.Fatalf("failed to add plugin: %v", err)
 	}
@@ -158,12 +154,7 @@ func TestAddPlugin(t *testing.T) {
 	for _, p := range lockfile.Plugins {
 		if p.Name == plugin.Name && p.OCIReference == plugin.OCIReference {
 			found = true
-			if p.InstallTime.IsZero() {
-				t.Error("expected InstallTime to be set")
-			}
-			if p.LastVerified.IsZero() {
-				t.Error("expected LastVerified to be set")
-			}
+			// InstallTime and LastVerified fields were removed from simplified structure
 			break
 		}
 	}
@@ -177,7 +168,7 @@ func TestAddPlugin(t *testing.T) {
 		OCIReference: "ghcr.io/test/invalid:v1",
 	}
 
-	err = lockfile.AddPlugin(invalidPlugin)
+	err = lockfile.AddPlugin("invalid-plugin", invalidPlugin)
 	if err == nil {
 		t.Error("expected error when adding plugin without name")
 	}
@@ -190,10 +181,9 @@ func TestRemovePlugin(t *testing.T) {
 		Name:         "test-plugin",
 		OCIReference: "ghcr.io/test/plugin:v1.0.0",
 		OCIDigest:    "sha256:abc123",
-		InstallPath:  "/path/to/plugin",
 	}
 
-	err := lockfile.AddPlugin(plugin)
+	err := lockfile.AddPlugin("test-plugin", plugin)
 	if err != nil {
 		t.Fatalf("failed to add plugin: %v", err)
 	}
@@ -235,10 +225,9 @@ func TestUpdatePluginVerification(t *testing.T) {
 		Name:         "test-plugin",
 		OCIReference: "ghcr.io/test/plugin:v1.0.0",
 		OCIDigest:    "sha256:abc123",
-		InstallPath:  "/path/to/plugin",
 	}
 
-	err := lockfile.AddPlugin(plugin)
+	err := lockfile.AddPlugin("test-plugin", plugin)
 	if err != nil {
 		t.Fatalf("failed to add plugin: %v", err)
 	}
@@ -254,7 +243,6 @@ func TestUpdatePluginVerification(t *testing.T) {
 		ProvenanceVerified: true,
 		SBOMVerified:      true,
 		VulnScanPassed:    false,
-		VerificationTime:  time.Now().UTC(),
 		Warnings:          []string{"High severity vulnerability found"},
 	}
 
@@ -290,10 +278,9 @@ func TestGetAndFindPlugin(t *testing.T) {
 		Name:         "test-plugin",
 		OCIReference: "ghcr.io/test/plugin:v1.0.0",
 		OCIDigest:    "sha256:abc123",
-		InstallPath:  "/path/to/plugin",
 	}
 
-	err := lockfile.AddPlugin(plugin)
+	err := lockfile.AddPlugin("test-plugin", plugin)
 	if err != nil {
 		t.Fatalf("failed to add plugin: %v", err)
 	}
@@ -353,10 +340,9 @@ func TestListPlugins(t *testing.T) {
 			Name:         fmt.Sprintf("plugin-%d", i),
 			OCIReference: fmt.Sprintf("ghcr.io/test/plugin-%d:v1.0.0", i),
 			OCIDigest:    fmt.Sprintf("sha256:abc%d", i),
-			InstallPath:  fmt.Sprintf("/path/to/plugin-%d", i),
 		}
 
-		err := lockfile.AddPlugin(plugin)
+		err := lockfile.AddPlugin(fmt.Sprintf("plugin-%d", i), plugin)
 		if err != nil {
 			t.Fatalf("failed to add plugin %d: %v", i, err)
 		}
@@ -423,14 +409,11 @@ func TestLoadSaveLockfile(t *testing.T) {
 		Version:      "1.0.0",
 		OCIReference: "ghcr.io/test/plugin:v1.0.0",
 		OCIDigest:    "sha256:abc123def456",
-		ImageHash:    "sha256:def456abc123",
-		InstallPath:  "/vault/.obsidian/plugins/test-plugin",
 		VerificationState: VerificationState{
 			ProvenanceVerified: true,
 			SBOMVerified:      true,
 			VulnScanPassed:    true,
-			VerificationTime:  time.Now().UTC(),
-		},
+			},
 		Metadata: PluginMetadata{
 			Author:      "Test Author",
 			Description: "A test plugin",
@@ -438,7 +421,7 @@ func TestLoadSaveLockfile(t *testing.T) {
 		},
 	}
 
-	err = lockfile.AddPlugin(plugin)
+	err = lockfile.AddPlugin("test-plugin", plugin)
 	if err != nil {
 		t.Fatalf("failed to add plugin: %v", err)
 	}
@@ -536,10 +519,9 @@ func TestLoadFromObsidianDirectory(t *testing.T) {
 		Name:         "existing-plugin",
 		OCIReference: "ghcr.io/test/existing:v1",
 		OCIDigest:    "sha256:existing123",
-		InstallPath:  "/path/to/existing",
 	}
 
-	err = lockfile.AddPlugin(plugin)
+	err = lockfile.AddPlugin("test-plugin", plugin)
 	if err != nil {
 		t.Fatalf("failed to add plugin: %v", err)
 	}

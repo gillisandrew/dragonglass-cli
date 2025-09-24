@@ -87,7 +87,7 @@ func verifyPlugin(imageRef string, ctx *cmd.CommandContext) error {
 	fmt.Printf("Fetching manifest from registry...\n")
 
 	// Get manifest and annotations
-	manifest, annotations, err := client.GetManifest(opCtx, imageRef)
+	manifest, annotations, _, err := client.GetManifest(opCtx, imageRef)
 	if err != nil {
 		return fmt.Errorf("failed to fetch manifest: %w", err)
 	}

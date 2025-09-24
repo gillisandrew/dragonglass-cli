@@ -23,6 +23,35 @@ import (
 	"github.com/gillisandrew/dragonglass-cli/internal/registry"
 )
 
+func NewInstallCommand(ctx *cmd.CommandContext) *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "install",
+		Short: "Install plugins from lockfile",
+		Long: `Install all plugins specified in the lockfile with exact SHA256 verification.
+This command reads the dragonglass-lock.json file and installs all plugins listed,
+verifying their integrity against the stored digests.
+
+Example:
+  dragonglass install
+  dragonglass install --force`,
+		Args: cobra.NoArgs,
+		Run: func(cmd *cobra.Command, args []string) {
+			force, _ := cmd.Flags().GetBool("force")
+			fmt.Printf("Installing plugins from lockfile...\n")
+
+			if err := runInstallFromLockfile(ctx, force); err != nil {
+				fmt.Printf("Install failed: %v\n", err)
+				os.Exit(1)
+			}
+
+			fmt.Printf("All plugins installed successfully\n")
+		},
+	}
+
+	cmd.Flags().BoolP("force", "f", false, "Overwrite existing plugin files if they exist")
+	return cmd
+}
+
 func NewAddCommand(ctx *cmd.CommandContext) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "add [OCI_IMAGE_REFERENCE]",
@@ -67,6 +96,154 @@ func runAddCommand(imageRef string, ctx *cmd.CommandContext, force bool) error {
 	return addPlugin(imageRef, cfg, lockfileData, lockfilePath, ctx, force)
 }
 
+func runInstallFromLockfile(ctx *cmd.CommandContext, force bool) error {
+	// Find dragonglass directory and load lockfile
+	dragonglassDir, err := findDragonglassDirectory()
+	if err != nil {
+		return fmt.Errorf("failed to find dragonglass directory: %w", err)
+	}
+
+	lockfilePath := filepath.Join(dragonglassDir, "dragonglass-lock.json")
+
+	// Check if lockfile exists
+	if _, err := os.Stat(lockfilePath); os.IsNotExist(err) {
+		return fmt.Errorf("lockfile not found at %s (run 'dragonglass add' to add plugins first)", lockfilePath)
+	}
+
+	// Load existing lockfile
+	lockfileData, err := lockfile.LoadLockfile(lockfilePath)
+	if err != nil {
+		return fmt.Errorf("failed to load lockfile: %w", err)
+	}
+
+	if len(lockfileData.Plugins) == 0 {
+		fmt.Printf("No plugins found in lockfile\n")
+		return nil
+	}
+
+	fmt.Printf("Found %d plugins in lockfile\n", len(lockfileData.Plugins))
+
+	// Find Obsidian directory for installation
+	obsidianDir, err := findObsidianDirectory()
+	if err != nil {
+		return fmt.Errorf("failed to find Obsidian directory: %w", err)
+	}
+
+	// Install each plugin from lockfile
+	installedCount := 0
+	skippedCount := 0
+
+	for pluginID, pluginEntry := range lockfileData.Plugins {
+		fmt.Printf("\nProcessing plugin: %s (%s)\n", pluginEntry.Name, pluginID)
+
+		pluginDir := filepath.Join(obsidianDir, "plugins", pluginID)
+
+		// Check if plugin directory already exists
+		if _, err := os.Stat(pluginDir); err == nil {
+			if !force {
+				fmt.Printf("  Skipping %s (already exists, use --force to overwrite)\n", pluginID)
+				skippedCount++
+				continue
+			}
+			fmt.Printf("  Removing existing plugin directory: %s\n", pluginDir)
+			if err := os.RemoveAll(pluginDir); err != nil {
+				return fmt.Errorf("failed to remove existing plugin directory %s: %w", pluginDir, err)
+			}
+		}
+
+		// Install plugin from OCI reference
+		fmt.Printf("  Installing from: %s (digest: %s)\n", pluginEntry.OCIReference, pluginEntry.OCIDigest)
+
+		if err := installPluginFromLockfileEntry(pluginEntry.OCIReference, pluginDir, pluginID, pluginEntry, ctx); err != nil {
+			return fmt.Errorf("failed to install plugin %s: %w", pluginID, err)
+		}
+
+		fmt.Printf("  Successfully installed %s\n", pluginEntry.Name)
+		installedCount++
+	}
+
+	fmt.Printf("\nInstallation summary:\n")
+	fmt.Printf("  Installed: %d plugins\n", installedCount)
+	if skippedCount > 0 {
+		fmt.Printf("  Skipped: %d plugins (already exist)\n", skippedCount)
+	}
+
+	return nil
+}
+
+func installPluginFromLockfileEntry(imageRef, pluginDir, pluginID string, pluginEntry lockfile.PluginEntry, cmdCtx *cmd.CommandContext) error {
+	// Create registry client
+	client, err := registry.NewClient(nil)
+	if err != nil {
+		return fmt.Errorf("failed to create registry client: %w", err)
+	}
+
+	// Create context with timeout
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
+	defer cancel()
+
+	// Fetch manifest using image reference
+	manifest, _, manifestDigest, err := client.GetManifest(ctx, imageRef)
+	if err != nil {
+		return fmt.Errorf("failed to fetch manifest: %w", err)
+	}
+
+	// Verify digest matches what's in lockfile
+	if manifestDigest != pluginEntry.OCIDigest {
+		return fmt.Errorf("digest mismatch: expected %s, got %s", pluginEntry.OCIDigest, manifestDigest)
+	}
+
+	// Extract plugin files
+	if err := extractPluginFilesFromManifest(ctx, imageRef, manifest, pluginDir); err != nil {
+		// Clean up on failure
+		_ = os.RemoveAll(pluginDir)
+		return fmt.Errorf("failed to extract plugin files: %w", err)
+	}
+
+	// Create manifest.json from lockfile metadata
+	if err := createPluginManifestFromLockfile(pluginDir, pluginID, pluginEntry); err != nil {
+		// Clean up on failure
+		_ = os.RemoveAll(pluginDir)
+		return fmt.Errorf("failed to create plugin manifest: %w", err)
+	}
+
+	return nil
+}
+
+func createPluginManifestFromLockfile(pluginDir, pluginID string, pluginEntry lockfile.PluginEntry) error {
+	manifestPath := filepath.Join(pluginDir, "manifest.json")
+
+	// Create Obsidian-compatible manifest from lockfile data
+	manifestData := map[string]interface{}{
+		"id":          pluginID,
+		"name":        pluginEntry.Name,
+		"version":     pluginEntry.Version,
+		"description": pluginEntry.Metadata.Description,
+		"author":      pluginEntry.Metadata.Author,
+	}
+
+	// Add optional fields if available in lockfile metadata
+	if pluginEntry.Metadata.Repository != "" {
+		manifestData["authorUrl"] = pluginEntry.Metadata.Repository
+	}
+
+	file, err := os.Create(manifestPath)
+	if err != nil {
+		return fmt.Errorf("failed to create manifest file: %w", err)
+	}
+	defer func() {
+		_ = file.Close() // Ignore error on close
+	}()
+
+	encoder := json.NewEncoder(file)
+	encoder.SetIndent("", "  ")
+	if err := encoder.Encode(manifestData); err != nil {
+		return fmt.Errorf("failed to write manifest data: %w", err)
+	}
+
+	return nil
+}
+
 func addPlugin(imageRef string, cfg *config.Config, lockfileData *lockfile.Lockfile, lockfilePath string, cmdCtx *cmd.CommandContext, force bool) error {
 	// Step 1: Create registry client
 	fmt.Printf("Creating registry client...\n")
@@ -81,7 +258,7 @@ func addPlugin(imageRef string, cfg *config.Config, lockfileData *lockfile.Lockf
 
 	// Step 2: Fetch and parse manifest
 	fmt.Printf("Fetching manifest from registry...\n")
-	manifest, annotations, err := client.GetManifest(ctx, imageRef)
+	manifest, annotations, manifestDigest, err := client.GetManifest(ctx, imageRef)
 	if err != nil {
 		return fmt.Errorf("failed to fetch manifest: %w", err)
 	}
@@ -171,7 +348,7 @@ func addPlugin(imageRef string, cfg *config.Config, lockfileData *lockfile.Lockf
 
 	// Step 10: Update lockfile
 	fmt.Printf("Updating lockfile...\n")
-	if err := updateLockfile(lockfileData, lockfilePath, pluginMetadata, imageRef, manifest.Config.Digest.String(), pluginDir); err != nil {
+	if err := updateLockfile(lockfileData, lockfilePath, pluginMetadata, imageRef, manifestDigest); err != nil {
 		return fmt.Errorf("failed to update lockfile: %w", err)
 	}
 
@@ -280,7 +457,7 @@ func createPluginManifest(pluginDir string, metadata *plugin.Metadata) error {
 }
 
 // updateLockfile adds the installed plugin to the lockfile
-func updateLockfile(lockfileData *lockfile.Lockfile, lockfilePath string, metadata *plugin.Metadata, imageRef, digest, installPath string) error {
+func updateLockfile(lockfileData *lockfile.Lockfile, lockfilePath string, metadata *plugin.Metadata, imageRef, digest string) error {
 	if lockfileData == nil {
 		return fmt.Errorf("lockfile data is nil")
 	}
@@ -291,12 +468,10 @@ func updateLockfile(lockfileData *lockfile.Lockfile, lockfilePath string, metada
 		Version:      metadata.Version,
 		OCIReference: imageRef,
 		OCIDigest:    digest,
-		InstallPath:  installPath,
 		VerificationState: lockfile.VerificationState{
 			ProvenanceVerified: true, // We verified SLSA above
 			SBOMVerified:      false, // Not implemented yet
 			VulnScanPassed:    true,  // Assume passed for now
-			VerificationTime:  time.Now().UTC(),
 		},
 		Metadata: lockfile.PluginMetadata{
 			Author:      metadata.Author,
@@ -306,7 +481,7 @@ func updateLockfile(lockfileData *lockfile.Lockfile, lockfilePath string, metada
 	}
 
 	// Add to lockfile
-	if err := lockfileData.AddPlugin(entry); err != nil {
+	if err := lockfileData.AddPlugin(metadata.ID, entry); err != nil {
 		return fmt.Errorf("failed to add plugin to lockfile: %w", err)
 	}
 

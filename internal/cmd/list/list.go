@@ -45,31 +45,21 @@ func runListCommand(ctx *cmd.CommandContext) error {
 		cfg = config.DefaultConfig()
 	}
 
-	// Load lockfile
-	lockfileOpts := lockfile.DefaultLockfileOpts()
-	if ctx.LockfilePath != "" {
-		lockfileOpts = lockfileOpts.WithLockfilePath(ctx.LockfilePath)
-	} else {
-		// Try to find obsidian directory from config path
-		if ctx.ConfigPath != "" {
-			obsidianDir := filepath.Dir(ctx.ConfigPath)
-			lockfileOpts = lockfileOpts.WithObsidianDir(obsidianDir)
-		} else {
-			// Auto-discover
-			wd, err := os.Getwd()
-			if err != nil {
-				return fmt.Errorf("failed to get working directory: %w", err)
-			}
-			obsidianDir, err := config.FindObsidianDirectory(wd)
-			if err != nil {
-				return fmt.Errorf("failed to find .obsidian directory: %w", err)
-			}
-			lockfileOpts = lockfileOpts.WithObsidianDir(obsidianDir)
-		}
+	// Find dragonglass directory and load lockfile (same logic as install/add commands)
+	dragonglassDir, err := findDragonglassDirectory()
+	if err != nil {
+		return fmt.Errorf("failed to find dragonglass directory: %w", err)
 	}
 
-	lockfileManager := lockfile.NewLockfileManager(lockfileOpts)
-	lockfileData, lockfilePath, err := lockfileManager.LoadLockfile()
+	lockfilePath := filepath.Join(dragonglassDir, "dragonglass-lock.json")
+
+	// Check if lockfile exists
+	if _, err := os.Stat(lockfilePath); os.IsNotExist(err) {
+		return fmt.Errorf("no lockfile found at %s (run 'dragonglass add' to add plugins first)", lockfilePath)
+	}
+
+	// Load existing lockfile
+	lockfileData, err := lockfile.LoadLockfile(lockfilePath)
 	if err != nil {
 		return fmt.Errorf("failed to load lockfile: %w", err)
 	}
@@ -87,10 +77,10 @@ func runListCommand(ctx *cmd.CommandContext) error {
 
 	// Text output with table format
 	w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
-	if _, err := fmt.Fprintln(w, "NAME\tVERSION\tINSTALLED\tVERIFIED\tSTATUS"); err != nil {
+	if _, err := fmt.Fprintln(w, "NAME\tVERSION\tVERIFIED\tSTATUS"); err != nil {
 		return fmt.Errorf("failed to write header: %w", err)
 	}
-	if _, err := fmt.Fprintln(w, "----\t-------\t---------\t--------\t------"); err != nil {
+	if _, err := fmt.Fprintln(w, "----\t-------\t--------\t------"); err != nil {
 		return fmt.Errorf("failed to write header separator: %w", err)
 	}
 
@@ -107,12 +97,9 @@ func runListCommand(ctx *cmd.CommandContext) error {
 			verifiedStatus = "Yes"
 		}
 
-		installTime := plugin.InstallTime.Format("2006-01-02")
-
-		if _, err := fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\n",
+		if _, err := fmt.Fprintf(w, "%s\t%s\t%s\t%s\n",
 			plugin.Name,
 			plugin.Version,
-			installTime,
 			verifiedStatus,
 			status); err != nil {
 			return fmt.Errorf("failed to write plugin row: %w", err)
@@ -127,4 +114,37 @@ func runListCommand(ctx *cmd.CommandContext) error {
 	fmt.Printf("Lockfile: %s\n", lockfilePath)
 
 	return nil
+}
+
+// findDragonglassDirectory searches for or creates .dragonglass directory from current directory up
+func findDragonglassDirectory() (string, error) {
+	currentDir, err := os.Getwd()
+	if err != nil {
+		return "", fmt.Errorf("failed to get current directory: %w", err)
+	}
+
+	// Search up the directory tree for .dragonglass or create it at the same level as .obsidian
+	for {
+		// Check if .obsidian exists to determine if this is an Obsidian vault
+		obsidianPath := filepath.Join(currentDir, ".obsidian")
+		if info, err := os.Stat(obsidianPath); err == nil && info.IsDir() {
+			// Found .obsidian, so create/use .dragonglass at the same level
+			dragonglassPath := filepath.Join(currentDir, ".dragonglass")
+
+			// Create .dragonglass directory if it doesn't exist
+			if err := os.MkdirAll(dragonglassPath, 0755); err != nil {
+				return "", fmt.Errorf("failed to create .dragonglass directory: %w", err)
+			}
+
+			return dragonglassPath, nil
+		}
+
+		parent := filepath.Dir(currentDir)
+		if parent == currentDir {
+			break // reached root
+		}
+		currentDir = parent
+	}
+
+	return "", fmt.Errorf(".obsidian directory not found in current path or parent directories (required to determine vault location)")
 }

@@ -90,21 +90,16 @@ type PluginEntry struct {
 	Version         string                 `json:"version"`
 	OCIReference    string                 `json:"oci_reference"`
 	OCIDigest       string                 `json:"oci_digest"`
-	ImageHash       string                 `json:"image_hash"`
-	InstallPath     string                 `json:"install_path"`
-	InstallTime     time.Time              `json:"install_time"`
-	LastVerified    time.Time              `json:"last_verified"`
 	VerificationState VerificationState    `json:"verification_state"`
 	Metadata        PluginMetadata         `json:"metadata"`
 }
 
 type VerificationState struct {
-	ProvenanceVerified bool      `json:"provenance_verified"`
-	SBOMVerified      bool      `json:"sbom_verified"`
-	VulnScanPassed    bool      `json:"vuln_scan_passed"`
-	VerificationTime  time.Time `json:"verification_time"`
-	Warnings          []string  `json:"warnings,omitempty"`
-	Errors            []string  `json:"errors,omitempty"`
+	ProvenanceVerified bool     `json:"provenance_verified"`
+	SBOMVerified      bool     `json:"sbom_verified"`
+	VulnScanPassed    bool     `json:"vuln_scan_passed"`
+	Warnings          []string `json:"warnings,omitempty"`
+	Errors            []string `json:"errors,omitempty"`
 }
 
 type PluginMetadata struct {
@@ -157,22 +152,18 @@ func (l *Lockfile) Validate() error {
 		if plugin.OCIDigest == "" {
 			return fmt.Errorf("plugin %s: OCI digest is required", pluginID)
 		}
-		if plugin.InstallPath == "" {
-			return fmt.Errorf("plugin %s: install path is required", pluginID)
-		}
 	}
 
 	return nil
 }
 
-func (l *Lockfile) AddPlugin(plugin PluginEntry) error {
+func (l *Lockfile) AddPlugin(pluginID string, plugin PluginEntry) error {
+	if pluginID == "" {
+		return fmt.Errorf("plugin ID is required")
+	}
 	if plugin.Name == "" {
 		return fmt.Errorf("plugin name is required")
 	}
-
-	pluginID := generatePluginID(plugin.Name, plugin.OCIReference)
-	plugin.InstallTime = time.Now().UTC()
-	plugin.LastVerified = plugin.InstallTime
 
 	l.Plugins[pluginID] = plugin
 	l.UpdatedAt = time.Now().UTC()
@@ -198,7 +189,6 @@ func (l *Lockfile) UpdatePluginVerification(pluginID string, verification Verifi
 	}
 
 	plugin.VerificationState = verification
-	plugin.LastVerified = time.Now().UTC()
 	l.Plugins[pluginID] = plugin
 	l.UpdatedAt = time.Now().UTC()
 
