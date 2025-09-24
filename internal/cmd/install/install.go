@@ -23,42 +23,51 @@ import (
 	"github.com/gillisandrew/dragonglass-cli/internal/registry"
 )
 
-func NewInstallCommand(ctx *cmd.CommandContext) *cobra.Command {
-	return &cobra.Command{
-		Use:   "install [OCI_IMAGE_REFERENCE]",
-		Short: "Install a verified plugin from OCI registry",
-		Long: `Install a verified Obsidian plugin from an OCI registry.
+func NewAddCommand(ctx *cmd.CommandContext) *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "add [OCI_IMAGE_REFERENCE]",
+		Short: "Add a verified plugin from OCI registry",
+		Long: `Add a verified Obsidian plugin from an OCI registry.
 The plugin will be downloaded, verified for provenance and vulnerabilities,
-and installed to the .obsidian/plugins/ directory after user confirmation.
+and installed to the .obsidian/plugins/ directory.
 
 Example:
-  dragonglass install ghcr.io/owner/repo:plugin-name-v1.0.0`,
+  dragonglass add ghcr.io/owner/repo:plugin-name-v1.0.0
+  dragonglass add --force ghcr.io/owner/repo:plugin-name-v1.0.0`,
 		Args: cobra.ExactArgs(1),
 		Run: func(cmd *cobra.Command, args []string) {
 			imageRef := args[0]
-			fmt.Printf("Installing plugin: %s\n", imageRef)
+			force, _ := cmd.Flags().GetBool("force")
+			fmt.Printf("Adding plugin: %s\n", imageRef)
 
-			if err := runInstallCommand(imageRef, ctx); err != nil {
-				fmt.Printf("Installation failed: %v\n", err)
+			if err := runAddCommand(imageRef, ctx, force); err != nil {
+				fmt.Printf("Add failed: %v\n", err)
 				os.Exit(1)
 			}
 
-			fmt.Printf("Plugin installed successfully\n")
+			fmt.Printf("Plugin added successfully\n")
 		},
 	}
+
+	cmd.Flags().BoolP("force", "f", false, "Overwrite existing plugin files if they exist")
+	return cmd
 }
 
-func runInstallCommand(imageRef string, ctx *cmd.CommandContext) error {
-	// For now, use default behavior - this can be enhanced later with the new Opts pattern
-	// Load configuration and lockfile using legacy method temporarily
+func runAddCommand(imageRef string, ctx *cmd.CommandContext, force bool) error {
+	// Find dragonglass directory and set proper lockfile path
+	dragonglassDir, err := findDragonglassDirectory()
+	if err != nil {
+		return fmt.Errorf("failed to find dragonglass directory: %w", err)
+	}
+
+	lockfilePath := filepath.Join(dragonglassDir, "dragonglass-lock.json")
 	cfg := config.DefaultConfig()
-	lockfileData := lockfile.NewLockfile("")
-	lockfilePath := ""
+	lockfileData := lockfile.NewLockfile(lockfilePath)
 
-	return installPlugin(imageRef, cfg, lockfileData, lockfilePath, ctx)
+	return addPlugin(imageRef, cfg, lockfileData, lockfilePath, ctx, force)
 }
 
-func installPlugin(imageRef string, cfg *config.Config, lockfileData *lockfile.Lockfile, lockfilePath string, cmdCtx *cmd.CommandContext) error {
+func addPlugin(imageRef string, cfg *config.Config, lockfileData *lockfile.Lockfile, lockfilePath string, cmdCtx *cmd.CommandContext, force bool) error {
 	// Step 1: Create registry client
 	fmt.Printf("Creating registry client...\n")
 	client, err := registry.NewClient(nil)
@@ -135,7 +144,13 @@ func installPlugin(imageRef string, cfg *config.Config, lockfileData *lockfile.L
 
 	// Step 7: Check for conflicts
 	if _, err := os.Stat(pluginDir); err == nil {
-		return fmt.Errorf("plugin directory already exists: %s (use --force to overwrite)", pluginDir)
+		if !force {
+			return fmt.Errorf("plugin directory already exists: %s (use --force to overwrite)", pluginDir)
+		}
+		fmt.Printf("Removing existing plugin directory: %s\n", pluginDir)
+		if err := os.RemoveAll(pluginDir); err != nil {
+			return fmt.Errorf("failed to remove existing plugin directory: %w", err)
+		}
 	}
 
 	// Step 8: Extract plugin files
@@ -189,6 +204,39 @@ func findObsidianDirectory() (string, error) {
 	}
 
 	return "", fmt.Errorf(".obsidian directory not found in current path or parent directories")
+}
+
+// findDragonglassDirectory searches for or creates .dragonglass directory from current directory up
+func findDragonglassDirectory() (string, error) {
+	currentDir, err := os.Getwd()
+	if err != nil {
+		return "", fmt.Errorf("failed to get current directory: %w", err)
+	}
+
+	// Search up the directory tree for .dragonglass or create it at the same level as .obsidian
+	for {
+		// Check if .obsidian exists to determine if this is an Obsidian vault
+		obsidianPath := filepath.Join(currentDir, ".obsidian")
+		if info, err := os.Stat(obsidianPath); err == nil && info.IsDir() {
+			// Found .obsidian, so create/use .dragonglass at the same level
+			dragonglassPath := filepath.Join(currentDir, ".dragonglass")
+
+			// Create .dragonglass directory if it doesn't exist
+			if err := os.MkdirAll(dragonglassPath, 0755); err != nil {
+				return "", fmt.Errorf("failed to create .dragonglass directory: %w", err)
+			}
+
+			return dragonglassPath, nil
+		}
+
+		parent := filepath.Dir(currentDir)
+		if parent == currentDir {
+			break // reached root
+		}
+		currentDir = parent
+	}
+
+	return "", fmt.Errorf(".obsidian directory not found in current path or parent directories (required to determine vault location)")
 }
 
 // createPluginManifest creates the manifest.json file required by Obsidian

@@ -55,7 +55,7 @@ func main() {
 
 	// Add commands with context
 	rootCmd.AddCommand(auth.NewAuthCommand(cmdContext))
-	rootCmd.AddCommand(install.NewInstallCommand(cmdContext))
+	rootCmd.AddCommand(install.NewAddCommand(cmdContext))
 	rootCmd.AddCommand(verify.NewVerifyCommand(cmdContext))
 	rootCmd.AddCommand(list.NewListCommand(cmdContext))
 
