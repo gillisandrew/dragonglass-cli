@@ -18,6 +18,65 @@ const (
 	DefaultLockfilePerms = 0644
 )
 
+// LockfileOpts configures how lockfiles are loaded and managed
+type LockfileOpts struct {
+	// Override lockfile path (default: auto-discover)
+	LockfilePath string
+
+	// Whether to create default lockfile if none exists
+	CreateIfMissing bool
+
+	// Override obsidian directory for auto-discovery
+	ObsidianDir string
+
+	// Custom vault path for new lockfiles
+	VaultPath string
+}
+
+// DefaultLockfileOpts returns default lockfile loading options
+func DefaultLockfileOpts() *LockfileOpts {
+	return &LockfileOpts{
+		CreateIfMissing: true,
+	}
+}
+
+// WithLockfilePath sets a custom lockfile path
+func (opts *LockfileOpts) WithLockfilePath(path string) *LockfileOpts {
+	opts.LockfilePath = path
+	return opts
+}
+
+// WithObsidianDir sets a custom obsidian directory for auto-discovery
+func (opts *LockfileOpts) WithObsidianDir(dir string) *LockfileOpts {
+	opts.ObsidianDir = dir
+	return opts
+}
+
+// WithVaultPath sets a custom vault path for new lockfiles
+func (opts *LockfileOpts) WithVaultPath(path string) *LockfileOpts {
+	opts.VaultPath = path
+	return opts
+}
+
+// WithCreateIfMissing controls whether to create default lockfile when missing
+func (opts *LockfileOpts) WithCreateIfMissing(create bool) *LockfileOpts {
+	opts.CreateIfMissing = create
+	return opts
+}
+
+// LockfileManager handles lockfile loading and management
+type LockfileManager struct {
+	opts *LockfileOpts
+}
+
+// NewLockfileManager creates a lockfile manager with the given options
+func NewLockfileManager(opts *LockfileOpts) *LockfileManager {
+	if opts == nil {
+		opts = DefaultLockfileOpts()
+	}
+	return &LockfileManager{opts: opts}
+}
+
 type Lockfile struct {
 	Version     string                     `json:"version"`
 	GeneratedAt time.Time                  `json:"generated_at"`
@@ -222,13 +281,61 @@ func SaveLockfile(lockfile *Lockfile, lockfilePath string) error {
 	return nil
 }
 
-func LoadFromObsidianDirectory(obsidianDir string) (*Lockfile, string, error) {
-	lockfilePath := GetLockfilePath(obsidianDir)
+// LoadLockfile loads lockfile using the configured options
+func (lm *LockfileManager) LoadLockfile() (*Lockfile, string, error) {
+	// Use explicit path if provided
+	if lm.opts.LockfilePath != "" {
+		lockfile, err := LoadLockfile(lm.opts.LockfilePath)
+		if err != nil && !os.IsNotExist(err) {
+			return nil, "", fmt.Errorf("failed to load lockfile from %s: %w", lm.opts.LockfilePath, err)
+		}
+		if err == nil {
+			return lockfile, lm.opts.LockfilePath, nil
+		}
+		if !lm.opts.CreateIfMissing {
+			return nil, "", fmt.Errorf("lockfile not found: %s", lm.opts.LockfilePath)
+		}
+		// Create default lockfile at the specified path
+		vaultPath := lm.opts.VaultPath
+		if vaultPath == "" {
+			vaultPath = filepath.Dir(filepath.Dir(lm.opts.LockfilePath))
+		}
+		defaultLockfile := NewLockfile(vaultPath)
+		if err := SaveLockfile(defaultLockfile, lm.opts.LockfilePath); err != nil {
+			return nil, "", fmt.Errorf("failed to create default lockfile: %w", err)
+		}
+		return defaultLockfile, lm.opts.LockfilePath, nil
+	}
 
+	// Use provided obsidian directory
+	if lm.opts.ObsidianDir == "" {
+		return nil, "", fmt.Errorf("no lockfile path or obsidian directory provided")
+	}
+
+	lockfilePath := GetLockfilePath(lm.opts.ObsidianDir)
 	lockfile, err := LoadLockfile(lockfilePath)
 	if err != nil {
-		return nil, "", fmt.Errorf("failed to load lockfile: %w", err)
+		if !os.IsNotExist(err) || !lm.opts.CreateIfMissing {
+			return nil, "", fmt.Errorf("failed to load lockfile: %w", err)
+		}
+		// Create default lockfile in obsidian directory
+		vaultPath := lm.opts.VaultPath
+		if vaultPath == "" {
+			vaultPath = filepath.Dir(lm.opts.ObsidianDir)
+		}
+		defaultLockfile := NewLockfile(vaultPath)
+		if err := SaveLockfile(defaultLockfile, lockfilePath); err != nil {
+			return nil, "", fmt.Errorf("failed to create default lockfile: %w", err)
+		}
+		return defaultLockfile, lockfilePath, nil
 	}
 
 	return lockfile, lockfilePath, nil
+}
+
+// Legacy function for backward compatibility
+func LoadFromObsidianDirectory(obsidianDir string) (*Lockfile, string, error) {
+	opts := DefaultLockfileOpts().WithObsidianDir(obsidianDir)
+	manager := NewLockfileManager(opts)
+	return manager.LoadLockfile()
 }

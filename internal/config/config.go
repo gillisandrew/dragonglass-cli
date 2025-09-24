@@ -15,6 +15,56 @@ const (
 	DefaultConfigPerms = 0644
 )
 
+// ConfigOpts configures how configuration is loaded and managed
+type ConfigOpts struct {
+	// Override config file path (default: auto-discover)
+	ConfigPath string
+
+	// Whether to create default config if none exists
+	CreateIfMissing bool
+
+	// Override working directory for auto-discovery
+	WorkingDir string
+}
+
+// DefaultConfigOpts returns default configuration loading options
+func DefaultConfigOpts() *ConfigOpts {
+	return &ConfigOpts{
+		CreateIfMissing: true,
+	}
+}
+
+// WithConfigPath sets a custom config file path
+func (opts *ConfigOpts) WithConfigPath(path string) *ConfigOpts {
+	opts.ConfigPath = path
+	return opts
+}
+
+// WithWorkingDir sets a custom working directory for auto-discovery
+func (opts *ConfigOpts) WithWorkingDir(dir string) *ConfigOpts {
+	opts.WorkingDir = dir
+	return opts
+}
+
+// WithCreateIfMissing controls whether to create default config when missing
+func (opts *ConfigOpts) WithCreateIfMissing(create bool) *ConfigOpts {
+	opts.CreateIfMissing = create
+	return opts
+}
+
+// ConfigManager handles configuration loading and management
+type ConfigManager struct {
+	opts *ConfigOpts
+}
+
+// NewConfigManager creates a configuration manager with the given options
+func NewConfigManager(opts *ConfigOpts) *ConfigManager {
+	if opts == nil {
+		opts = DefaultConfigOpts()
+	}
+	return &ConfigManager{opts: opts}
+}
+
 type Config struct {
 	Version string `json:"version"`
 
@@ -149,10 +199,36 @@ func SaveConfig(config *Config, configPath string) error {
 	return nil
 }
 
-func LoadFromCurrentDirectory() (*Config, string, error) {
-	wd, err := os.Getwd()
-	if err != nil {
-		return nil, "", fmt.Errorf("failed to get working directory: %w", err)
+// LoadConfig loads configuration using the configured options
+func (cm *ConfigManager) LoadConfig() (*Config, string, error) {
+	// Use explicit path if provided
+	if cm.opts.ConfigPath != "" {
+		config, err := LoadConfig(cm.opts.ConfigPath)
+		if err != nil && !os.IsNotExist(err) {
+			return nil, "", fmt.Errorf("failed to load config from %s: %w", cm.opts.ConfigPath, err)
+		}
+		if err == nil {
+			return config, cm.opts.ConfigPath, nil
+		}
+		if !cm.opts.CreateIfMissing {
+			return nil, "", fmt.Errorf("config file not found: %s", cm.opts.ConfigPath)
+		}
+		// Create default config at the specified path
+		defaultConfig := DefaultConfig()
+		if err := SaveConfig(defaultConfig, cm.opts.ConfigPath); err != nil {
+			return nil, "", fmt.Errorf("failed to create default config: %w", err)
+		}
+		return defaultConfig, cm.opts.ConfigPath, nil
+	}
+
+	// Auto-discover from working directory
+	wd := cm.opts.WorkingDir
+	if wd == "" {
+		var err error
+		wd, err = os.Getwd()
+		if err != nil {
+			return nil, "", fmt.Errorf("failed to get working directory: %w", err)
+		}
 	}
 
 	obsidianDir, err := FindObsidianDirectory(wd)
@@ -163,8 +239,22 @@ func LoadFromCurrentDirectory() (*Config, string, error) {
 	configPath := GetConfigPath(obsidianDir)
 	config, err := LoadConfig(configPath)
 	if err != nil {
-		return nil, "", fmt.Errorf("failed to load config: %w", err)
+		if !os.IsNotExist(err) || !cm.opts.CreateIfMissing {
+			return nil, "", fmt.Errorf("failed to load config: %w", err)
+		}
+		// Create default config in discovered obsidian directory
+		defaultConfig := DefaultConfig()
+		if err := SaveConfig(defaultConfig, configPath); err != nil {
+			return nil, "", fmt.Errorf("failed to create default config: %w", err)
+		}
+		return defaultConfig, configPath, nil
 	}
 
 	return config, configPath, nil
+}
+
+// Legacy function for backward compatibility
+func LoadFromCurrentDirectory() (*Config, string, error) {
+	manager := NewConfigManager(DefaultConfigOpts())
+	return manager.LoadConfig()
 }

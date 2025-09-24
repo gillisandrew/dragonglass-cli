@@ -254,7 +254,9 @@ func TestLoadFromCurrentDirectory(t *testing.T) {
 		t.Fatalf("failed to get current working directory: %v", err)
 	}
 	defer func() {
-		os.Chdir(originalWd)
+		if err := os.Chdir(originalWd); err != nil {
+			t.Logf("failed to restore working directory: %v", err)
+		}
 	}()
 
 	// Create test vault structure

@@ -5,16 +5,23 @@ package main
 import (
 	"fmt"
 	"os"
-	"path/filepath"
 
 	"github.com/spf13/cobra"
 
+	"github.com/gillisandrew/dragonglass-cli/internal/cmd"
 	"github.com/gillisandrew/dragonglass-cli/internal/cmd/auth"
 	"github.com/gillisandrew/dragonglass-cli/internal/cmd/install"
 	"github.com/gillisandrew/dragonglass-cli/internal/cmd/list"
 	"github.com/gillisandrew/dragonglass-cli/internal/cmd/verify"
-	"github.com/gillisandrew/dragonglass-cli/internal/config"
-	"github.com/gillisandrew/dragonglass-cli/internal/lockfile"
+)
+
+var (
+	// Global flags
+	annotationNamespace string
+	trustedBuilder      string
+	configPath          string
+	lockfilePath        string
+	githubToken         string
 )
 
 var rootCmd = &cobra.Command{
@@ -27,26 +34,30 @@ It ensures plugins are built through authorized workflows and performs
 vulnerability scanning before installation.`,
 }
 
+func init() {
+	// Global persistent flags
+	rootCmd.PersistentFlags().StringVar(&annotationNamespace, "annotation-namespace", "vnd.obsidian.plugin", "Plugin annotation namespace prefix")
+	rootCmd.PersistentFlags().StringVar(&trustedBuilder, "trusted-builder", "https://github.com/gillisandrew/dragonglass-poc/.github/workflows/build.yml@refs/heads/main", "Trusted workflow signer identity")
+	rootCmd.PersistentFlags().StringVar(&configPath, "config", "", "Path to configuration file")
+	rootCmd.PersistentFlags().StringVar(&lockfilePath, "lockfile", "", "Path to lockfile")
+	rootCmd.PersistentFlags().StringVar(&githubToken, "github-token", "", "GitHub authentication token")
+}
+
 func main() {
-	// Try to load configuration from current directory
-	// Commands will gracefully handle missing config
-	cfg, configPath, configErr := config.LoadFromCurrentDirectory()
-
-	// Try to load lockfile from the same .obsidian directory
-	var lockfileData *lockfile.Lockfile
-	var lockfilePath string
-	var lockfileErr error
-
-	if configErr == nil {
-		// Extract obsidian directory from config path
-		obsidianDir := filepath.Dir(configPath)
-		lockfileData, lockfilePath, lockfileErr = lockfile.LoadFromObsidianDirectory(obsidianDir)
+	// Initialize command context with global flags
+	cmdContext := &cmd.CommandContext{
+		AnnotationNamespace: annotationNamespace,
+		TrustedBuilder:      trustedBuilder,
+		ConfigPath:          configPath,
+		LockfilePath:        lockfilePath,
+		GitHubToken:         githubToken,
 	}
 
-	rootCmd.AddCommand(auth.NewAuthCommand(cfg, configPath, configErr, lockfileData, lockfilePath, lockfileErr))
-	rootCmd.AddCommand(install.NewInstallCommand(cfg, configPath, configErr, lockfileData, lockfilePath, lockfileErr))
-	rootCmd.AddCommand(verify.NewVerifyCommand(cfg, configPath, configErr, lockfileData, lockfilePath, lockfileErr))
-	rootCmd.AddCommand(list.NewListCommand(cfg, configPath, configErr, lockfileData, lockfilePath, lockfileErr))
+	// Add commands with context
+	rootCmd.AddCommand(auth.NewAuthCommand(cmdContext))
+	rootCmd.AddCommand(install.NewInstallCommand(cmdContext))
+	rootCmd.AddCommand(verify.NewVerifyCommand(cmdContext))
+	rootCmd.AddCommand(list.NewListCommand(cmdContext))
 
 	if err := rootCmd.Execute(); err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)

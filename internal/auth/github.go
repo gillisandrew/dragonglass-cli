@@ -10,22 +10,84 @@ import (
 )
 
 const (
-	// GitHub configuration for dragonglass
-	GitHubHost = "github.com"
+	// Default GitHub configuration for dragonglass
+	DefaultGitHubHost = "github.com"
 
-	// OAuth Scopes needed for ghcr.io access
-	RequiredScopes = "read:packages"
+	// Default OAuth Scopes needed for ghcr.io access
+	DefaultRequiredScopes = "read:packages"
 )
 
+// AuthOpts configures GitHub authentication behavior
+type AuthOpts struct {
+	// GitHub hostname (default: "github.com")
+	GitHubHost string
+
+	// Required OAuth scopes (default: "read:packages")
+	RequiredScopes string
+
+	// Override token (for testing or custom auth)
+	Token string
+}
+
+// DefaultAuthOpts returns the default authentication options
+func DefaultAuthOpts() *AuthOpts {
+	return &AuthOpts{
+		GitHubHost:     DefaultGitHubHost,
+		RequiredScopes: DefaultRequiredScopes,
+	}
+}
+
+// WithToken sets a custom authentication token
+func (opts *AuthOpts) WithToken(token string) *AuthOpts {
+	opts.Token = token
+	return opts
+}
+
+// WithHost sets a custom GitHub hostname
+func (opts *AuthOpts) WithHost(host string) *AuthOpts {
+	opts.GitHubHost = host
+	return opts
+}
+
+// WithScopes sets custom OAuth scopes
+func (opts *AuthOpts) WithScopes(scopes string) *AuthOpts {
+	opts.RequiredScopes = scopes
+	return opts
+}
+
+// AuthClient provides GitHub authentication functionality
+type AuthClient struct {
+	opts *AuthOpts
+}
+
+// NewAuthClient creates a new authentication client with the given options
+func NewAuthClient(opts *AuthOpts) *AuthClient {
+	if opts == nil {
+		opts = DefaultAuthOpts()
+	}
+	return &AuthClient{opts: opts}
+}
+
 // IsAuthenticated checks if user has valid stored credentials
-func IsAuthenticated() bool {
+func (c *AuthClient) IsAuthenticated() bool {
+	// If token override is provided, validate it directly
+	if c.opts.Token != "" {
+		return c.ValidateToken(c.opts.Token) == nil
+	}
+
 	cred, err := GetStoredCredential()
 	if err != nil || cred.Token == "" {
 		return false
 	}
 
 	// Validate the stored token
-	return ValidateToken(GitHubHost, cred.Token) == nil
+	return c.ValidateToken(cred.Token) == nil
+}
+
+// Legacy function for backward compatibility
+func IsAuthenticated() bool {
+	client := NewAuthClient(DefaultAuthOpts())
+	return client.IsAuthenticated()
 }
 
 // GetAuthenticatedUser returns the authenticated user's login
@@ -50,14 +112,14 @@ func GetAuthenticatedUser() (string, error) {
 }
 
 // ValidateToken checks if the provided token is valid
-func ValidateToken(hostname, token string) error {
+func (c *AuthClient) ValidateToken(token string) error {
 	if token == "" {
 		return fmt.Errorf("no authentication token provided")
 	}
 
 	// Create HTTP client with the token
 	client := &http.Client{Timeout: 10 * time.Second}
-	req, err := http.NewRequest("GET", fmt.Sprintf("https://api.%s/user", hostname), nil)
+	req, err := http.NewRequest("GET", fmt.Sprintf("https://api.%s/user", c.opts.GitHubHost), nil)
 	if err != nil {
 		return fmt.Errorf("failed to create request: %w", err)
 	}
@@ -69,7 +131,9 @@ func ValidateToken(hostname, token string) error {
 	if err != nil {
 		return fmt.Errorf("failed to validate token: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() {
+		_ = resp.Body.Close() // Ignore error on close
+	}()
 
 	if resp.StatusCode == http.StatusUnauthorized {
 		return fmt.Errorf("token is invalid or expired")
@@ -80,6 +144,13 @@ func ValidateToken(hostname, token string) error {
 	}
 
 	return nil
+}
+
+// Legacy function for backward compatibility
+func ValidateToken(hostname, token string) error {
+	opts := DefaultAuthOpts().WithHost(hostname)
+	client := NewAuthClient(opts)
+	return client.ValidateToken(token)
 }
 
 // RequireAuth ensures the user is authenticated, prompting if needed
@@ -95,8 +166,16 @@ func RequireAuth() error {
 	return fmt.Errorf("not authenticated - please run 'dragonglass auth' first")
 }
 
-// GetToken retrieves authentication token from stored credentials
-func GetToken() (string, error) {
+// GetToken retrieves authentication token (respects token override)
+func (c *AuthClient) GetToken() (string, error) {
+	// Return override token if provided
+	if c.opts.Token != "" {
+		if err := c.ValidateToken(c.opts.Token); err != nil {
+			return "", fmt.Errorf("provided token is invalid: %w", err)
+		}
+		return c.opts.Token, nil
+	}
+
 	cred, err := GetStoredCredential()
 	if err != nil {
 		return "", fmt.Errorf("no stored credentials found: %w", err)
@@ -107,7 +186,7 @@ func GetToken() (string, error) {
 	}
 
 	// Validate token before returning
-	if err := ValidateToken(GitHubHost, cred.Token); err != nil {
+	if err := c.ValidateToken(cred.Token); err != nil {
 		// Clear invalid stored token
 		_ = ClearStoredToken()
 		return "", fmt.Errorf("stored token is invalid: %w", err)
@@ -116,9 +195,15 @@ func GetToken() (string, error) {
 	return cred.Token, nil
 }
 
+// Legacy function for backward compatibility
+func GetToken() (string, error) {
+	client := NewAuthClient(DefaultAuthOpts())
+	return client.GetToken()
+}
+
 // GetHTTPClient returns an authenticated HTTP client for GitHub API calls
-func GetHTTPClient() (*http.Client, error) {
-	token, err := GetToken()
+func (c *AuthClient) GetHTTPClient() (*http.Client, error) {
+	token, err := c.GetToken()
 	if err != nil {
 		return nil, fmt.Errorf("failed to get authentication token: %w", err)
 	}
@@ -137,6 +222,12 @@ func GetHTTPClient() (*http.Client, error) {
 	}
 
 	return client, nil
+}
+
+// GetHTTPClient returns an authenticated HTTP client for GitHub API calls (legacy)
+func GetHTTPClient() (*http.Client, error) {
+	client := NewAuthClient(DefaultAuthOpts())
+	return client.GetHTTPClient()
 }
 
 // authenticatedTransport adds GitHub authentication headers
@@ -159,7 +250,7 @@ func Authenticate() error {
 	fmt.Printf("🚀 Starting dragonglass authentication...\n\n")
 
 	// Run device flow authentication
-	tokenResp, err := RunDeviceFlow(RequiredScopes)
+	tokenResp, err := RunDeviceFlow(DefaultRequiredScopes)
 	if err != nil {
 		return fmt.Errorf("device flow authentication failed: %w", err)
 	}
@@ -195,7 +286,9 @@ func getUsernameFromToken(token string) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("failed to get user info: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() {
+		_ = resp.Body.Close() // Ignore error on close
+	}()
 
 	if resp.StatusCode != http.StatusOK {
 		return "", fmt.Errorf("GitHub API error: %d", resp.StatusCode)

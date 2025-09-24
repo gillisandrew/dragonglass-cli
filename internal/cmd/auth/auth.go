@@ -8,11 +8,11 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/gillisandrew/dragonglass-cli/internal/auth"
+	"github.com/gillisandrew/dragonglass-cli/internal/cmd"
 	"github.com/gillisandrew/dragonglass-cli/internal/config"
-	"github.com/gillisandrew/dragonglass-cli/internal/lockfile"
 )
 
-func NewAuthCommand(cfg *config.Config, configPath string, configErr error, lockfileData *lockfile.Lockfile, lockfilePath string, lockfileErr error) *cobra.Command {
+func NewAuthCommand(ctx *cmd.CommandContext) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "auth",
 		Short: "Authenticate with GitHub App using device flow",
@@ -22,12 +22,7 @@ and securely store your authentication credentials.
 
 The authentication uses the same proven flow as the GitHub CLI (gh).`,
 		Run: func(cmd *cobra.Command, args []string) {
-			if configErr != nil {
-				fmt.Printf("Warning: Failed to load configuration: %v\n", configErr)
-				cfg = config.DefaultConfig()
-			}
-
-			err := runAuthCommand(cfg)
+			err := runAuthCommand(ctx)
 			if err != nil {
 				fmt.Printf("Error: %v\n", err)
 				return
@@ -41,13 +36,31 @@ The authentication uses the same proven flow as the GitHub CLI (gh).`,
 	return cmd
 }
 
-func runAuthCommand(cfg *config.Config) error {
+func runAuthCommand(ctx *cmd.CommandContext) error {
+	// Configure auth client with token override if provided
+	authOpts := auth.DefaultAuthOpts()
+	if ctx.GitHubToken != "" {
+		authOpts = authOpts.WithToken(ctx.GitHubToken)
+	}
+	authClient := auth.NewAuthClient(authOpts)
+
 	// Check if already authenticated
-	if auth.IsAuthenticated() {
+	if authClient.IsAuthenticated() {
 		username, err := auth.GetAuthenticatedUser()
 		if err != nil {
 			// Don't fail completely if we can't get username details
 			username = "authenticated user"
+		}
+
+		// Load configuration to show registry
+		configOpts := config.DefaultConfigOpts()
+		if ctx.ConfigPath != "" {
+			configOpts = configOpts.WithConfigPath(ctx.ConfigPath)
+		}
+		configManager := config.NewConfigManager(configOpts)
+		cfg, _, err := configManager.LoadConfig()
+		if err != nil {
+			cfg = config.DefaultConfig()
 		}
 
 		fmt.Printf("✅ Already authenticated as %s\n", username)
@@ -67,7 +80,7 @@ func newStatusCommand() *cobra.Command {
 		Long:  `Display current authentication status and user information.`,
 		Run: func(cmd *cobra.Command, args []string) {
 			if !auth.IsAuthenticated() {
-				fmt.Printf("❌ Not authenticated with %s\n", auth.GitHubHost)
+				fmt.Printf("❌ Not authenticated with %s\n", auth.DefaultGitHubHost)
 				fmt.Println("\nRun 'dragonglass auth' to authenticate.")
 				return
 			}
@@ -93,7 +106,7 @@ func newStatusCommand() *cobra.Command {
 			// Don't show full token for security
 			maskedToken := maskToken(token)
 
-			fmt.Printf("✅ Authenticated with %s\n", auth.GitHubHost)
+			fmt.Printf("✅ Authenticated with %s\n", auth.DefaultGitHubHost)
 			fmt.Printf("👤 User: %s\n", username)
 			fmt.Printf("🔑 Token: %s\n", maskedToken)
 			fmt.Printf("📦 Scopes: %s\n", cred.Scopes)

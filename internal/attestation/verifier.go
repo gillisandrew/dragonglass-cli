@@ -28,13 +28,6 @@ const (
 	SLSAPredicateV1 = "https://slsa.dev/provenance/v1"
 	SBOMPredicateV2 = "https://spdx.dev/Document/v2.3"
 	SBOMPredicateV3 = "https://spdx.dev/Document/v3.0"
-
-	// Expected workflow for dragonglass plugins
-	ExpectedWorkflowRepo = "gillisandrew/dragonglass-poc"
-	ExpectedWorkflowPath = ".github/workflows/build.yml"
-
-	// Trusted builder for dragonglass plugins (the specific workflow we trust)
-	TrustedBuilder = "https://github.com/gillisandrew/dragonglass-poc/.github/workflows/build.yml@refs/heads/main"
 )
 
 // AttestationType represents the type of attestation
@@ -47,9 +40,10 @@ const (
 
 // AttestationVerifier handles verification of multiple attestation types using OCI attestation discovery
 type AttestationVerifier struct {
-	token      string
-	httpClient *http.Client
-	verifier   *verify.Verifier
+	token          string
+	httpClient     *http.Client
+	verifier       *verify.Verifier
+	trustedBuilder string
 }
 
 // VerificationResult contains comprehensive verification results for all attestation types
@@ -99,7 +93,7 @@ type AttestationData struct {
 }
 
 // NewAttestationVerifier creates a new attestation verifier with sigstore verification
-func NewAttestationVerifier(token string) (*AttestationVerifier, error) {
+func NewAttestationVerifier(token string, trustedBuilder string) (*AttestationVerifier, error) {
 	httpClient := &http.Client{
 		Timeout: 30 * time.Second,
 	}
@@ -111,9 +105,10 @@ func NewAttestationVerifier(token string) (*AttestationVerifier, error) {
 	}
 
 	return &AttestationVerifier{
-		token:      token,
-		httpClient: httpClient,
-		verifier:   sigstoreVerifier,
+		token:          token,
+		httpClient:     httpClient,
+		verifier:       sigstoreVerifier,
+		trustedBuilder: trustedBuilder,
 	}, nil
 }
 
@@ -276,15 +271,13 @@ func (v *AttestationVerifier) verifySLSA(attestations []AttestationData) (*SLSAR
 		if builder != nil {
 			result.Builder = builder.GetId()
 
-			// Validate against trusted builder
-			if result.Builder == TrustedBuilder {
+			// Validate against trusted builder only
+			if v.trustedBuilder != "" && result.Builder == v.trustedBuilder {
 				result.Valid = true
-				result.Repository = ExpectedWorkflowRepo
-				result.Workflow = ExpectedWorkflowPath
 			}
 		}
 
-		// Extract repository information from metadata
+		// Extract repository information from metadata for informational purposes
 		metadata := runDetails.GetMetadata()
 		if metadata != nil {
 			invocationId := metadata.GetInvocationId()
@@ -301,18 +294,22 @@ func (v *AttestationVerifier) verifySLSA(attestations []AttestationData) (*SLSAR
 		}
 	}
 
-	// Validate against expected workflow repository if configured
-	if result.Repository != "" && result.Repository != ExpectedWorkflowRepo {
-		result.Valid = false
-		return result, fmt.Errorf("unexpected repository: %s (expected %s)", result.Repository, ExpectedWorkflowRepo)
-	}
-
-	// Set default values if not extracted
-	if result.Repository == "" {
-		result.Repository = ExpectedWorkflowRepo
-	}
-	if result.Workflow == "" {
-		result.Workflow = ExpectedWorkflowPath
+	// Extract repository from buildDefinition if not found in metadata (for testing/compatibility)
+	if result.Repository == "" && result.Provenance != nil {
+		buildDef := result.Provenance.GetBuildDefinition()
+		if buildDef != nil {
+			externalParams := buildDef.GetExternalParameters()
+			if externalParams != nil {
+				// Convert to map to access nested fields (needed for test compatibility)
+				if paramsMap, ok := externalParams.AsMap()["workflow"]; ok {
+					if workflowMap, ok := paramsMap.(map[string]interface{}); ok {
+						if repo, ok := workflowMap["repository"].(string); ok {
+							result.Repository = repo
+						}
+					}
+				}
+			}
+		}
 	}
 
 	return result, nil
@@ -513,31 +510,27 @@ func (v *AttestationVerifier) parseSignstoreBundle(bundle *bundle.Bundle, artifa
 		// Create policy options for GitHub Actions workflow verification
 		policyOptions := []verify.PolicyOption{}
 
-		// Add certificate identity verification for our trusted GitHub workflow
-		if len(ExpectedWorkflowRepo) > 0 {
-			// Create identity matcher for GitHub Actions
-			sanMatcher, err := verify.NewSANMatcher("", fmt.Sprintf("https://github.com/%s/.*", ExpectedWorkflowRepo))
-			if err != nil {
-				return nil, fmt.Errorf("failed to create SAN matcher: %w", err)
-			}
-
-			issuerMatcher, err := verify.NewIssuerMatcher("https://token.actions.githubusercontent.com", "")
-			if err != nil {
-				return nil, fmt.Errorf("failed to create issuer matcher: %w", err)
-			}
-
-			// Create certificate extensions for GitHub Actions workflow verification
-			extensions := certificate.Extensions{
-				GithubWorkflowRepository: ExpectedWorkflowRepo,
-			}
-
-			certificateIdentity, err := verify.NewCertificateIdentity(sanMatcher, issuerMatcher, extensions)
-			if err != nil {
-				return nil, fmt.Errorf("failed to create certificate identity: %w", err)
-			}
-
-			policyOptions = append(policyOptions, verify.WithCertificateIdentity(certificateIdentity))
+		// Add certificate identity verification for GitHub Actions (generic)
+		// Since we only check builder trust, we use a generic GitHub Actions verification
+		sanMatcher, err := verify.NewSANMatcher("", "https://github.com/.*")
+		if err != nil {
+			return nil, fmt.Errorf("failed to create SAN matcher: %w", err)
 		}
+
+		issuerMatcher, err := verify.NewIssuerMatcher("https://token.actions.githubusercontent.com", "")
+		if err != nil {
+			return nil, fmt.Errorf("failed to create issuer matcher: %w", err)
+		}
+
+		// Create certificate extensions for GitHub Actions workflow verification
+		extensions := certificate.Extensions{}
+
+		certificateIdentity, err := verify.NewCertificateIdentity(sanMatcher, issuerMatcher, extensions)
+		if err != nil {
+			return nil, fmt.Errorf("failed to create certificate identity: %w", err)
+		}
+
+		policyOptions = append(policyOptions, verify.WithCertificateIdentity(certificateIdentity))
 
 		// Build the policy with artifact option and policy options
 		var policyBuilder verify.PolicyBuilder

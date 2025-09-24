@@ -324,6 +324,7 @@ func TestGetAndFindPlugin(t *testing.T) {
 	foundPlugin := lockfile.FindPluginByName("test-plugin")
 	if foundPlugin == nil {
 		t.Error("expected to find plugin by name")
+		return // Exit early to avoid nil pointer dereference
 	}
 
 	if foundPlugin.Name != plugin.Name {

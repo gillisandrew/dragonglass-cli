@@ -58,7 +58,9 @@ func StartDeviceFlow(scopes string) (*DeviceCodeResponse, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to request device code: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() {
+		_ = resp.Body.Close() // Ignore error on close
+	}()
 
 	if resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(resp.Body)
@@ -125,7 +127,7 @@ func PollForAccessToken(ctx context.Context, deviceCode string, interval int) (*
 			}
 
 			body, err := io.ReadAll(resp.Body)
-			resp.Body.Close()
+			_ = resp.Body.Close() // Ignore error on close
 
 			if err != nil {
 				return nil, fmt.Errorf("failed to read token response: %w", err)
@@ -219,7 +221,9 @@ func ValidateTokenScopes(token string, requiredScopes []string) error {
 	if err != nil {
 		return fmt.Errorf("failed to validate token: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() {
+		_ = resp.Body.Close() // Ignore error on close
+	}()
 
 	if resp.StatusCode != http.StatusOK {
 		return fmt.Errorf("token validation failed: %d", resp.StatusCode)

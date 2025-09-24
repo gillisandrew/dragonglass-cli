@@ -5,12 +5,12 @@ import (
 )
 
 func TestConstants(t *testing.T) {
-	if GitHubHost != "github.com" {
-		t.Errorf("expected GitHubHost to be 'github.com', got %s", GitHubHost)
+	if DefaultGitHubHost != "github.com" {
+		t.Errorf("expected DefaultGitHubHost to be 'github.com', got %s", DefaultGitHubHost)
 	}
 
-	if RequiredScopes != "read:packages" {
-		t.Errorf("expected RequiredScopes to be 'read:packages', got %s", RequiredScopes)
+	if DefaultRequiredScopes != "read:packages" {
+		t.Errorf("expected DefaultRequiredScopes to be 'read:packages', got %s", DefaultRequiredScopes)
 	}
 }
 

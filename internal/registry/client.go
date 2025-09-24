@@ -25,7 +25,52 @@ import (
 	"github.com/gillisandrew/dragonglass-cli/internal/plugin"
 )
 
+// RegistryOpts configures OCI registry client behavior
+type RegistryOpts struct {
+	// Registry hostname (default: "ghcr.io")
+	RegistryHost string
+
+	// Request timeout duration (default: 30s)
+	Timeout time.Duration
+
+	// AuthClient for token management (optional)
+	AuthClient AuthProvider
+}
+
+// AuthProvider interface for authentication token management
+type AuthProvider interface {
+	GetToken() (string, error)
+	GetHTTPClient() (*http.Client, error)
+}
+
+// DefaultRegistryOpts returns default registry options
+func DefaultRegistryOpts() *RegistryOpts {
+	return &RegistryOpts{
+		RegistryHost: DefaultRegistry,
+		Timeout:      DefaultTimeout,
+	}
+}
+
+// WithRegistryHost sets a custom registry hostname
+func (opts *RegistryOpts) WithRegistryHost(host string) *RegistryOpts {
+	opts.RegistryHost = host
+	return opts
+}
+
+// WithTimeout sets a custom request timeout
+func (opts *RegistryOpts) WithTimeout(timeout time.Duration) *RegistryOpts {
+	opts.Timeout = timeout
+	return opts
+}
+
+// WithAuthProvider sets a custom auth provider
+func (opts *RegistryOpts) WithAuthProvider(provider AuthProvider) *RegistryOpts {
+	opts.AuthClient = provider
+	return opts
+}
+
 type Client struct {
+	opts       *RegistryOpts
 	httpClient *http.Client
 	registry   *remote.Registry
 	token      string
@@ -52,43 +97,64 @@ const (
 	DefaultTimeout  = 30 * time.Second
 )
 
-// NewClient creates a new OCI registry client with GitHub authentication
-func NewClient() (*Client, error) {
-	// Get GitHub token from our auth package
-	token, err := internalAuth.GetToken()
+// NewClient creates a new OCI registry client with the given options
+func NewClient(opts *RegistryOpts) (*Client, error) {
+	if opts == nil {
+		opts = DefaultRegistryOpts()
+	}
+
+	var authProvider AuthProvider = &githubAuthAdapter{}
+	if opts.AuthClient != nil {
+		authProvider = opts.AuthClient
+	}
+
+	// Get authentication token
+	token, err := authProvider.GetToken()
 	if err != nil {
 		return nil, fmt.Errorf("failed to get authentication token: %w", err)
 	}
 
 	// Create ORAS remote registry
-	reg, err := remote.NewRegistry(DefaultRegistry)
+	reg, err := remote.NewRegistry(opts.RegistryHost)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create registry client: %w", err)
 	}
 
-	// Configure ORAS auth client with GitHub token
+	// Configure ORAS auth client with token
 	// For GHCR, username can be anything when using token authentication
 	reg.Client = &auth.Client{
 		Client: retry.DefaultClient,
 		Cache:  auth.NewCache(),
-		Credential: auth.StaticCredential(DefaultRegistry, auth.Credential{
+		Credential: auth.StaticCredential(opts.RegistryHost, auth.Credential{
 			Username: "token",
 			Password: token,
 		}),
 	}
 
-	// Also create regular HTTP client for backward compatibility
-	httpClient, err := internalAuth.GetHTTPClient()
+	// Create regular HTTP client
+	httpClient, err := authProvider.GetHTTPClient()
 	if err != nil {
 		return nil, fmt.Errorf("failed to create HTTP client: %w", err)
 	}
-	httpClient.Timeout = DefaultTimeout
+	httpClient.Timeout = opts.Timeout
 
 	return &Client{
+		opts:       opts,
 		httpClient: httpClient,
 		registry:   reg,
 		token:      token,
 	}, nil
+}
+
+// githubAuthAdapter adapts our internal auth package to the AuthProvider interface
+type githubAuthAdapter struct{}
+
+func (g *githubAuthAdapter) GetToken() (string, error) {
+	return internalAuth.GetToken()
+}
+
+func (g *githubAuthAdapter) GetHTTPClient() (*http.Client, error) {
+	return internalAuth.GetHTTPClient()
 }
 
 // setupRepositoryAuth configures ORAS authentication for a repository
@@ -110,7 +176,7 @@ func (c *Client) SetRegistry(hostname string) error {
 		return fmt.Errorf("failed to create registry for %s: %w", hostname, err)
 	}
 
-	// Configure ORAS auth client with GitHub token
+	// Configure ORAS auth client with token
 	reg.Client = &auth.Client{
 		Client: retry.DefaultClient,
 		Cache:  auth.NewCache(),
@@ -121,6 +187,7 @@ func (c *Client) SetRegistry(hostname string) error {
 	}
 
 	c.registry = reg
+	c.opts.RegistryHost = hostname
 	return nil
 }
 
@@ -220,7 +287,7 @@ func (c *Client) Pull(ctx context.Context, imageRef string, destDir string, prog
 	}
 
 	// Parse plugin metadata from manifest annotations
-	parser := plugin.NewManifestParser()
+	parser := plugin.NewManifestParser(nil) // Use default plugin options
 	pluginMetadata, err := parser.ParseMetadata(&manifest, manifest.Annotations)
 	if err != nil {
 		return nil, fmt.Errorf("failed to parse plugin metadata: %w", err)
@@ -338,7 +405,7 @@ func (c *Client) ValidatePlugin(result *PullResult) (*plugin.ValidationResult, e
 		return nil, fmt.Errorf("plugin metadata not available")
 	}
 
-	parser := plugin.NewManifestParser()
+	parser := plugin.NewManifestParser(nil) // Use default plugin options
 
 	// Validate metadata
 	metadataResult := parser.ValidateMetadata(result.Plugin)

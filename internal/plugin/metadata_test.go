@@ -7,7 +7,7 @@ import (
 )
 
 func TestManifestParser_ParseMetadata_New(t *testing.T) {
-	parser := NewManifestParser()
+	parser := NewManifestParser(nil)
 
 	tests := []struct {
 		name        string
@@ -107,7 +107,7 @@ func TestManifestParser_ParseMetadata_New(t *testing.T) {
 }
 
 func TestManifestParser_ValidateMetadata_New(t *testing.T) {
-	parser := NewManifestParser()
+	parser := NewManifestParser(nil)
 
 	tests := []struct {
 		name       string

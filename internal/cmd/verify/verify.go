@@ -12,13 +12,13 @@ import (
 
 	"github.com/gillisandrew/dragonglass-cli/internal/attestation"
 	"github.com/gillisandrew/dragonglass-cli/internal/auth"
+	"github.com/gillisandrew/dragonglass-cli/internal/cmd"
 	"github.com/gillisandrew/dragonglass-cli/internal/config"
-	"github.com/gillisandrew/dragonglass-cli/internal/lockfile"
 	"github.com/gillisandrew/dragonglass-cli/internal/plugin"
 	"github.com/gillisandrew/dragonglass-cli/internal/registry"
 )
 
-func NewVerifyCommand(cfg *config.Config, configPath string, configErr error, lockfileData *lockfile.Lockfile, lockfilePath string, lockfileErr error) *cobra.Command {
+func NewVerifyCommand(ctx *cmd.CommandContext) *cobra.Command {
 	return &cobra.Command{
 		Use:   "verify [OCI_IMAGE_REFERENCE]",
 		Short: "Verify a plugin without installing it",
@@ -30,43 +30,64 @@ Example:
   dragonglass verify ghcr.io/owner/repo:plugin-name-v1.0.0`,
 		Args: cobra.ExactArgs(1),
 		Run: func(cmd *cobra.Command, args []string) {
-			if configErr != nil {
-				fmt.Printf("Warning: Failed to load configuration: %v\n", configErr)
-				fmt.Println("Using default configuration...")
-				cfg = config.DefaultConfig()
-			}
-
 			imageRef := args[0]
-			fmt.Printf("🔍 Verifying plugin: %s\n", imageRef)
-			fmt.Printf("Verification mode: strict=%v\n", cfg.Verification.StrictMode)
+			fmt.Printf("Verifying plugin: %s\n", imageRef)
 
-			if err := verifyPlugin(imageRef, cfg); err != nil {
-				fmt.Printf("❌ Verification failed: %v\n", err)
+			if err := verifyPlugin(imageRef, ctx); err != nil {
+				fmt.Printf("Verification failed: %v\n", err)
 				os.Exit(1)
 			}
 
-			fmt.Printf("✅ Plugin verification completed successfully\n")
+			fmt.Printf("Plugin verification completed successfully\n")
 		},
 	}
 }
 
-func verifyPlugin(imageRef string, cfg *config.Config) error {
-	fmt.Printf("📋 Creating registry client...\n")
+func verifyPlugin(imageRef string, ctx *cmd.CommandContext) error {
+	fmt.Printf("Creating registry client...\n")
+
+	// Load configuration
+	configOpts := config.DefaultConfigOpts()
+	if ctx.ConfigPath != "" {
+		configOpts = configOpts.WithConfigPath(ctx.ConfigPath)
+	}
+	configManager := config.NewConfigManager(configOpts)
+	cfg, _, err := configManager.LoadConfig()
+	if err != nil {
+		fmt.Printf("Warning: Failed to load configuration: %v\n", err)
+		fmt.Println("Using default configuration...")
+		cfg = config.DefaultConfig()
+	}
+
+	fmt.Printf("Verification mode: strict=%v\n", cfg.Verification.StrictMode)
+
+	// Configure registry client
+	registryOpts := registry.DefaultRegistryOpts()
+	if cfg.Registry.DefaultRegistry != "" {
+		registryOpts = registryOpts.WithRegistryHost(cfg.Registry.DefaultRegistry)
+	}
+
+	// Configure auth if token provided via flag
+	if ctx.GitHubToken != "" {
+		authOpts := auth.DefaultAuthOpts().WithToken(ctx.GitHubToken)
+		authClient := auth.NewAuthClient(authOpts)
+		registryOpts = registryOpts.WithAuthProvider(authClient)
+	}
 
 	// Create registry client
-	client, err := registry.NewClient()
+	client, err := registry.NewClient(registryOpts)
 	if err != nil {
 		return fmt.Errorf("failed to create registry client: %w", err)
 	}
 
 	// Create context with timeout
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	opCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
-	fmt.Printf("🌐 Fetching manifest from registry...\n")
+	fmt.Printf("Fetching manifest from registry...\n")
 
 	// Get manifest and annotations
-	manifest, annotations, err := client.GetManifest(ctx, imageRef)
+	manifest, annotations, err := client.GetManifest(opCtx, imageRef)
 	if err != nil {
 		return fmt.Errorf("failed to fetch manifest: %w", err)
 	}
@@ -77,8 +98,21 @@ func verifyPlugin(imageRef string, cfg *config.Config) error {
 	fmt.Printf("   - Annotations: %d\n", len(annotations))
 
 	// Parse plugin metadata from annotations
-	fmt.Printf("🔍 Parsing plugin metadata...\n")
-	parser := plugin.NewManifestParser()
+	fmt.Printf("Parsing plugin metadata...\n")
+
+	// Configure plugin parser with annotation namespace from context
+	pluginOpts := plugin.DefaultPluginOpts()
+	if ctx.AnnotationNamespace != "" {
+		pluginOpts = pluginOpts.WithAnnotationNamespace(ctx.AnnotationNamespace)
+	}
+	if ctx.TrustedBuilder != "" {
+		pluginOpts = pluginOpts.WithTrustedWorkflowSigner(ctx.TrustedBuilder)
+	}
+	if cfg.Verification.StrictMode {
+		pluginOpts = pluginOpts.WithStrictValidation(true)
+	}
+
+	parser := plugin.NewManifestParser(pluginOpts)
 	pluginMetadata, err := parser.ParseMetadata(manifest, annotations)
 	if err != nil {
 		return fmt.Errorf("failed to parse plugin metadata: %w", err)
@@ -141,12 +175,12 @@ func verifyPlugin(imageRef string, cfg *config.Config) error {
 
 	// Verify all attestations (SLSA, SBOM, etc.)
 	fmt.Printf("🔍 Verifying attestations (SLSA, SBOM, etc.)...\n")
-	verifier, err := attestation.NewAttestationVerifier(token)
+	verifier, err := attestation.NewAttestationVerifier(token, ctx.TrustedBuilder)
 	if err != nil {
 		return fmt.Errorf("failed to create attestation verifier: %w", err)
 	}
 
-	attestationResult, err := verifier.VerifyAttestations(ctx, imageRef)
+	attestationResult, err := verifier.VerifyAttestations(opCtx, imageRef)
 	if err != nil {
 		return fmt.Errorf("failed to verify attestations: %w", err)
 	}

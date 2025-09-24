@@ -159,7 +159,7 @@ func TestVerifyDigest(t *testing.T) {
 func TestNewClient(t *testing.T) {
 	// This test will only pass if GitHub CLI is configured
 	// In CI/test environments without authentication, we expect it to fail
-	client, err := NewClient()
+	client, err := NewClient(nil)
 	if err != nil {
 		t.Logf("Expected error in test environment without authentication: %v", err)
 		// This is expected in most test environments
@@ -168,6 +168,7 @@ func TestNewClient(t *testing.T) {
 
 	if client == nil {
 		t.Error("client should not be nil when no error is returned")
+		return // Exit early to avoid nil pointer dereference
 	}
 
 	if client.registry == nil {
@@ -286,7 +287,7 @@ func TestPullIntegration(t *testing.T) {
 		t.Skip("skipping integration test in short mode")
 	}
 
-	client, err := NewClient()
+	client, err := NewClient(nil)
 	if err != nil {
 		t.Skipf("skipping integration test - no authentication available: %v", err)
 	}
@@ -313,6 +314,7 @@ func TestPullIntegration(t *testing.T) {
 
 	if manifest == nil {
 		t.Error("manifest should not be nil")
+		return // Exit early to avoid nil pointer dereference
 	}
 
 	if annotations == nil {

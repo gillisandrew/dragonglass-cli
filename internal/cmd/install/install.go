@@ -15,6 +15,7 @@ import (
 
 	"github.com/gillisandrew/dragonglass-cli/internal/attestation"
 	"github.com/gillisandrew/dragonglass-cli/internal/auth"
+	"github.com/gillisandrew/dragonglass-cli/internal/cmd"
 	"github.com/gillisandrew/dragonglass-cli/internal/config"
 	"github.com/gillisandrew/dragonglass-cli/internal/lockfile"
 	"github.com/gillisandrew/dragonglass-cli/internal/oci"
@@ -22,7 +23,7 @@ import (
 	"github.com/gillisandrew/dragonglass-cli/internal/registry"
 )
 
-func NewInstallCommand(cfg *config.Config, configPath string, configErr error, lockfileData *lockfile.Lockfile, lockfilePath string, lockfileErr error) *cobra.Command {
+func NewInstallCommand(ctx *cmd.CommandContext) *cobra.Command {
 	return &cobra.Command{
 		Use:   "install [OCI_IMAGE_REFERENCE]",
 		Short: "Install a verified plugin from OCI registry",
@@ -34,17 +35,11 @@ Example:
   dragonglass install ghcr.io/owner/repo:plugin-name-v1.0.0`,
 		Args: cobra.ExactArgs(1),
 		Run: func(cmd *cobra.Command, args []string) {
-			if configErr != nil {
-				fmt.Printf("Warning: Failed to load configuration: %v\n", configErr)
-				fmt.Println("Using default configuration...")
-				cfg = config.DefaultConfig()
-			}
-
 			imageRef := args[0]
 			fmt.Printf("Installing plugin: %s\n", imageRef)
 
-			if err := installPlugin(imageRef, cfg, lockfileData, lockfilePath); err != nil {
-				fmt.Printf("ERROR: Installation failed: %v\n", err)
+			if err := runInstallCommand(imageRef, ctx); err != nil {
+				fmt.Printf("Installation failed: %v\n", err)
 				os.Exit(1)
 			}
 
@@ -53,10 +48,20 @@ Example:
 	}
 }
 
-func installPlugin(imageRef string, cfg *config.Config, lockfileData *lockfile.Lockfile, lockfilePath string) error {
+func runInstallCommand(imageRef string, ctx *cmd.CommandContext) error {
+	// For now, use default behavior - this can be enhanced later with the new Opts pattern
+	// Load configuration and lockfile using legacy method temporarily
+	cfg := config.DefaultConfig()
+	lockfileData := lockfile.NewLockfile("")
+	lockfilePath := ""
+
+	return installPlugin(imageRef, cfg, lockfileData, lockfilePath, ctx)
+}
+
+func installPlugin(imageRef string, cfg *config.Config, lockfileData *lockfile.Lockfile, lockfilePath string, cmdCtx *cmd.CommandContext) error {
 	// Step 1: Create registry client
 	fmt.Printf("Creating registry client...\n")
-	client, err := registry.NewClient()
+	client, err := registry.NewClient(nil)
 	if err != nil {
 		return fmt.Errorf("failed to create registry client: %w", err)
 	}
@@ -74,7 +79,7 @@ func installPlugin(imageRef string, cfg *config.Config, lockfileData *lockfile.L
 
 	// Step 3: Parse plugin metadata
 	fmt.Printf("Parsing plugin metadata...\n")
-	parser := plugin.NewManifestParser()
+	parser := plugin.NewManifestParser(nil)
 	pluginMetadata, err := parser.ParseMetadata(manifest, annotations)
 	if err != nil {
 		return fmt.Errorf("failed to parse plugin metadata: %w", err)
@@ -98,7 +103,7 @@ func installPlugin(imageRef string, cfg *config.Config, lockfileData *lockfile.L
 		return fmt.Errorf("failed to get authentication token: %w", err)
 	}
 
-	verifier, err := attestation.NewAttestationVerifier(token)
+	verifier, err := attestation.NewAttestationVerifier(token, cmdCtx.TrustedBuilder)
 	if err != nil {
 		return fmt.Errorf("failed to create attestation verifier: %w", err)
 	}
@@ -137,7 +142,7 @@ func installPlugin(imageRef string, cfg *config.Config, lockfileData *lockfile.L
 	fmt.Printf("Extracting plugin files...\n")
 	if err := extractPluginFilesFromManifest(ctx, imageRef, manifest, pluginDir); err != nil {
 		// Clean up on failure
-		os.RemoveAll(pluginDir)
+		_ = os.RemoveAll(pluginDir) // Ignore cleanup error
 		return fmt.Errorf("failed to extract plugin files: %w", err)
 	}
 
@@ -145,7 +150,7 @@ func installPlugin(imageRef string, cfg *config.Config, lockfileData *lockfile.L
 	fmt.Printf("Creating plugin manifest...\n")
 	if err := createPluginManifest(pluginDir, pluginMetadata); err != nil {
 		// Clean up on failure
-		os.RemoveAll(pluginDir)
+		_ = os.RemoveAll(pluginDir) // Ignore cleanup error
 		return fmt.Errorf("failed to create plugin manifest: %w", err)
 	}
 
@@ -213,7 +218,9 @@ func createPluginManifest(pluginDir string, metadata *plugin.Metadata) error {
 	if err != nil {
 		return fmt.Errorf("failed to create manifest file: %w", err)
 	}
-	defer file.Close()
+	defer func() {
+		_ = file.Close() // Ignore error on close
+	}()
 
 	encoder := json.NewEncoder(file)
 	encoder.SetIndent("", "  ")

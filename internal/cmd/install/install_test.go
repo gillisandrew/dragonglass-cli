@@ -59,14 +59,22 @@ func TestFindObsidianDirectory(t *testing.T) {
 			if err != nil {
 				t.Fatalf("failed to create temp dir: %v", err)
 			}
-			defer os.RemoveAll(tempDir)
+			defer func() {
+				if err := os.RemoveAll(tempDir); err != nil {
+					t.Logf("failed to remove temp dir: %v", err)
+				}
+			}()
 
 			// Save original working directory
 			originalWd, err := os.Getwd()
 			if err != nil {
 				t.Fatalf("failed to get working directory: %v", err)
 			}
-			defer os.Chdir(originalWd)
+			defer func() {
+				if err := os.Chdir(originalWd); err != nil {
+					t.Logf("failed to restore working directory: %v", err)
+				}
+			}()
 
 			// Change to temp directory
 			if err := os.Chdir(tempDir); err != nil {
@@ -199,7 +207,11 @@ func TestCreatePluginManifest(t *testing.T) {
 			if err != nil {
 				t.Fatalf("failed to create temp dir: %v", err)
 			}
-			defer os.RemoveAll(tempDir)
+			defer func() {
+				if err := os.RemoveAll(tempDir); err != nil {
+					t.Logf("failed to remove temp dir: %v", err)
+				}
+			}()
 
 			// Create plugin manifest
 			err = createPluginManifest(tempDir, tt.metadata)
@@ -338,7 +350,11 @@ func TestExtractPluginFilesFromManifest(t *testing.T) {
 			if err != nil {
 				t.Fatalf("failed to create temp dir: %v", err)
 			}
-			defer os.RemoveAll(tempDir)
+			defer func() {
+				if err := os.RemoveAll(tempDir); err != nil {
+					t.Logf("failed to remove temp dir: %v", err)
+				}
+			}()
 
 			err = extractPluginFilesFromManifest(context.Background(), tt.imageRef, tt.manifest, tempDir)
 

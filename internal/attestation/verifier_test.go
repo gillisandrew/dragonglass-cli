@@ -11,7 +11,8 @@ import (
 
 func TestNewAttestationVerifier(t *testing.T) {
 	token := "test-token"
-	verifier, err := NewAttestationVerifier(token)
+	trustedBuilder := "https://github.com/actions/runner"
+	verifier, err := NewAttestationVerifier(token, trustedBuilder)
 
 	if err != nil {
 		t.Fatalf("NewAttestationVerifier failed: %v", err)
@@ -24,11 +25,16 @@ func TestNewAttestationVerifier(t *testing.T) {
 	if verifier.token != token {
 		t.Errorf("Expected token %s, got %s", token, verifier.token)
 	}
+
+	if verifier.trustedBuilder != trustedBuilder {
+		t.Errorf("Expected trustedBuilder %s, got %s", trustedBuilder, verifier.trustedBuilder)
+	}
 }
 
 func TestVerifySLSA(t *testing.T) {
 	verifier := &AttestationVerifier{
-		token: "test-token",
+		token:          "test-token",
+		trustedBuilder: "https://github.com/actions/runner",
 	}
 
 	tests := []struct {
@@ -50,21 +56,21 @@ func TestVerifySLSA(t *testing.T) {
 							"externalParameters": map[string]interface{}{
 								"workflow": map[string]interface{}{
 									"ref": "refs/heads/main",
-									"repository": ExpectedWorkflowRepo,
+									"repository": "github.com/owner/repo",
 								},
 							},
 						},
 						"runDetails": map[string]interface{}{
 							"builder": map[string]interface{}{
-								"id": TrustedBuilder,
+								"id": "https://github.com/actions/runner",
 							},
 						},
 					},
 				},
 			},
 			expectValid:   true,
-			expectBuilder: TrustedBuilder,
-			expectRepo:    ExpectedWorkflowRepo,
+			expectBuilder: "https://github.com/actions/runner",
+			expectRepo:    "github.com/owner/repo",
 			expectError:   false,
 		},
 		{
@@ -501,7 +507,7 @@ func TestFormatVerificationResult(t *testing.T) {
 					Valid:      true,
 					Repository: "gillisandrew/dragonglass-poc",
 					Workflow:   ".github/workflows/build.yml",
-					Builder:    TrustedBuilder,
+					Builder:    "https://github.com/actions/runner",
 				},
 				SBOM: &SBOMResult{
 					Valid:      true,
@@ -569,7 +575,7 @@ func TestVerifyAttestations_Integration(t *testing.T) {
 	// This would be an integration test that requires actual registry access
 	// For now, we'll create a mock test that simulates the flow
 
-	verifier, err := NewAttestationVerifier("test-token")
+	verifier, err := NewAttestationVerifier("test-token", "https://github.com/actions/runner")
 	if err != nil {
 		t.Skipf("Skipping integration test due to verifier creation failure: %v", err)
 	}

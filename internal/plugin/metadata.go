@@ -41,11 +41,16 @@ type ValidationResult struct {
 }
 
 // ManifestParser handles parsing plugin metadata from OCI manifests
-type ManifestParser struct{}
+type ManifestParser struct {
+	opts *PluginOpts
+}
 
-// NewManifestParser creates a new manifest parser
-func NewManifestParser() *ManifestParser {
-	return &ManifestParser{}
+// NewManifestParser creates a new manifest parser with the given options
+func NewManifestParser(opts *PluginOpts) *ManifestParser {
+	if opts == nil {
+		opts = DefaultPluginOpts()
+	}
+	return &ManifestParser{opts: opts}
 }
 
 // ParseMetadata extracts plugin metadata from OCI manifest annotations
@@ -54,34 +59,34 @@ func (p *ManifestParser) ParseMetadata(manifest *ocispec.Manifest, annotations m
 		return nil, fmt.Errorf("no annotations found in manifest")
 	}
 
-	// Extract core plugin metadata from annotations using configurable namespace
+	// Extract core plugin metadata from annotations using configured namespace
 	metadata := &Metadata{}
 
-	// Required fields - matching legacy manifest.json structure
+	// Required fields - matching manifest.json structure
 	var ok bool
-	idKey := GetAnnotationKey(AnnotationID)
+	idKey := GetAnnotationKeyWithNamespace(p.opts.AnnotationNamespace, AnnotationID)
 	if metadata.ID, ok = annotations[idKey]; !ok {
 		return nil, fmt.Errorf("required annotation '%s' not found", idKey)
 	}
 
-	nameKey := GetAnnotationKey(AnnotationName)
+	nameKey := GetAnnotationKeyWithNamespace(p.opts.AnnotationNamespace, AnnotationName)
 	if metadata.Name, ok = annotations[nameKey]; !ok {
 		return nil, fmt.Errorf("required annotation '%s' not found", nameKey)
 	}
 
-	versionKey := GetAnnotationKey(AnnotationVersion)
+	versionKey := GetAnnotationKeyWithNamespace(p.opts.AnnotationNamespace, AnnotationVersion)
 	if metadata.Version, ok = annotations[versionKey]; !ok {
 		return nil, fmt.Errorf("required annotation '%s' not found", versionKey)
 	}
 
-	// Optional fields from legacy manifest.json
-	metadata.MinAppVersion = annotations[GetAnnotationKey(AnnotationMinAppVersion)]
-	metadata.Description = annotations[GetAnnotationKey(AnnotationDescription)]
-	metadata.Author = annotations[GetAnnotationKey(AnnotationAuthor)]
-	metadata.AuthorURL = annotations[GetAnnotationKey(AnnotationAuthorURL)]
+	// Optional fields from manifest.json
+	metadata.MinAppVersion = annotations[GetAnnotationKeyWithNamespace(p.opts.AnnotationNamespace, AnnotationMinAppVersion)]
+	metadata.Description = annotations[GetAnnotationKeyWithNamespace(p.opts.AnnotationNamespace, AnnotationDescription)]
+	metadata.Author = annotations[GetAnnotationKeyWithNamespace(p.opts.AnnotationNamespace, AnnotationAuthor)]
+	metadata.AuthorURL = annotations[GetAnnotationKeyWithNamespace(p.opts.AnnotationNamespace, AnnotationAuthorURL)]
 
 	// Parse boolean flags
-	if desktopOnlyStr := annotations[GetAnnotationKey(AnnotationIsDesktopOnly)]; desktopOnlyStr == "true" {
+	if desktopOnlyStr := annotations[GetAnnotationKeyWithNamespace(p.opts.AnnotationNamespace, AnnotationIsDesktopOnly)]; desktopOnlyStr == "true" {
 		metadata.IsDesktopOnly = true
 	}
 
@@ -103,10 +108,12 @@ func (p *ManifestParser) ValidateMetadata(metadata *Metadata) *ValidationResult 
 			Message: "plugin ID cannot be empty",
 		})
 	} else if !isValidPluginID(metadata.ID) {
-		result.Errors = append(result.Errors, ValidationError{
-			Field:   "id",
-			Message: "plugin ID must contain only lowercase letters, numbers, and hyphens",
-		})
+		msg := "plugin ID must contain only lowercase letters, numbers, and hyphens"
+		if p.opts.StrictValidation {
+			result.Errors = append(result.Errors, ValidationError{Field: "id", Message: msg})
+		} else {
+			result.Warnings = append(result.Warnings, "Plugin ID format: "+msg)
+		}
 	}
 
 	if metadata.Name == "" {
@@ -122,10 +129,12 @@ func (p *ManifestParser) ValidateMetadata(metadata *Metadata) *ValidationResult 
 			Message: "plugin version cannot be empty",
 		})
 	} else if !isValidVersion(metadata.Version) {
-		result.Errors = append(result.Errors, ValidationError{
-			Field:   "version",
-			Message: "plugin version must be valid semantic version (e.g., 1.0.0)",
-		})
+		msg := "plugin version must be valid semantic version (e.g., 1.0.0)"
+		if p.opts.StrictValidation {
+			result.Errors = append(result.Errors, ValidationError{Field: "version", Message: msg})
+		} else {
+			result.Warnings = append(result.Warnings, "Version format: "+msg)
+		}
 	}
 
 	// Note: Repository and commit hash validation will be performed
@@ -237,17 +246,6 @@ func isValidVersion(version string) bool {
 	return matched
 }
 
-func isValidRepositoryURL(url string) bool {
-	// GitHub repository URL validation
-	matched, _ := regexp.MatchString(`^https://github\.com/[a-zA-Z0-9._-]+/[a-zA-Z0-9._-]+$`, url)
-	return matched
-}
-
-func isValidCommitHash(hash string) bool {
-	// SHA-1 or SHA-256 hash validation
-	matched, _ := regexp.MatchString(`^[a-f0-9]{40}$|^[a-f0-9]{64}$`, hash)
-	return matched
-}
 
 func isValidURL(url string) bool {
 	// Basic URL validation

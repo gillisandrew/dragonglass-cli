@@ -58,7 +58,9 @@ func (r *Repository) FetchManifest(ctx context.Context, reference string) (*ocis
 	if err != nil {
 		return nil, fmt.Errorf("failed to fetch reference %s: %w", reference, err)
 	}
-	defer rc.Close() // don't forget to close
+	defer func() {
+		_ = rc.Close() // Ignore error on close
+	}() // don't forget to close
 	pulledBlob, err := content.ReadAll(rc, descriptor)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read all content: %w", err)
@@ -107,7 +109,9 @@ func (r *Repository) extractBundleFromManifest(ctx context.Context, manifestDesc
 	if err != nil {
 		return nil, fmt.Errorf("failed to fetch manifest: %w", err)
 	}
-	defer manifestReader.Close()
+	defer func() {
+		_ = manifestReader.Close() // Ignore error on close
+	}()
 
 	// Read and parse the manifest
 	manifestData, err := content.ReadAll(manifestReader, manifestDesc)
