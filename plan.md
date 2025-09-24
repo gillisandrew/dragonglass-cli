@@ -215,34 +215,37 @@ The extractor should verify the extracted files form a valid Obsidian plugin bef
 
 ### Prompt 9: SLSA Provenance Verification
 ```
-Implement SLSA provenance verification with DSSE attestations. Extend the verification pipeline by adding:
+Implement SLSA provenance verification with DSSE in-toto attestations. Extend the verification pipeline by adding:
 
 1. Registry query for attestation artifacts using `application/vnd.in-toto+json` media type
 2. DSSE envelope parsing and signature verification using sigstore libraries
 3. In-toto attestation payload extraction from DSSE envelope
-4. SLSA provenance claim validation (source repo, workflow, builder, etc.)
-5. Workflow verification against expected gillisandrew/dragonglass-poc workflow
-6. Error reporting with specific provenance failures and attestation details
-7. Integration with existing OCI artifact processing
-8. Unit tests for DSSE verification and provenance parsing with test attestations
+4. Predicate type validation for `https://slsa.dev/provenance/v1`
+5. SLSA provenance claim validation (source repo, workflow, builder, etc.)
+6. Workflow verification against expected gillisandrew/dragonglass-poc workflow
+7. Error reporting with specific provenance failures and attestation details
+8. Integration with existing OCI artifact processing
+9. Unit tests for DSSE verification and SLSA v1 provenance parsing with test attestations
 
-The verifier should discover and verify DSSE-wrapped SLSA attestations stored as separate OCI artifacts, confirming plugins were built using the authorized workflow.
+The verifier should discover and verify DSSE-wrapped in-toto SLSA attestations with predicate type `https://slsa.dev/provenance/v1`, confirming plugins were built using the authorized workflow.
 ```
 
 ### Prompt 10: SPDX SBOM Parsing
 ```
-Implement SPDX SBOM parsing and analysis with DSSE attestations. Build on the verification pipeline by adding:
+Implement SPDX SBOM parsing and analysis with DSSE in-toto attestations. Build on the verification pipeline by adding:
 
-1. Registry query for SBOM artifacts using `application/spdx+json` or `application/vnd.cyclonedx+json` media types
-2. DSSE envelope parsing for SBOM attestations (if wrapped in DSSE)
-3. SPDX/CycloneDX document parsing from attestation payload
-4. Dependency extraction and analysis from SBOM data
-5. Package relationship mapping and license information extraction
-6. SBOM validation and completeness checks
-7. Integration with existing verification workflow and attestation discovery
-8. Unit tests for DSSE SBOM parsing with various SBOM formats and media types
+1. Registry query for SBOM artifacts using `application/vnd.in-toto+json` media type
+2. DSSE envelope parsing and signature verification for SBOM attestations
+3. In-toto attestation payload extraction from DSSE envelope
+4. Predicate type validation for `https://spdx.dev/Document/v2.3`
+5. SPDX SBOM document parsing from attestation predicate
+6. Dependency extraction and analysis from SBOM data
+7. Package relationship mapping and license information extraction
+8. SBOM validation and completeness checks
+9. Integration with existing verification workflow and attestation discovery
+10. Unit tests for DSSE in-toto SBOM attestation parsing with SPDX v2.3 format
 
-The parser should discover and extract comprehensive dependency information from DSSE-wrapped SBOMs stored as separate OCI artifacts, preparing it for vulnerability analysis.
+The parser should discover and extract comprehensive dependency information from DSSE-wrapped in-toto SBOM attestations with predicate type `https://spdx.dev/Document/v2.3`, preparing it for vulnerability analysis.
 ```
 
 ### Prompt 11: Vulnerability Scanning Integration

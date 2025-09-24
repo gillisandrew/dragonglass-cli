@@ -81,10 +81,12 @@ Plugin metadata is stored in OCI manifest annotations using a configurable names
 
 ## Attestation Format
 
-Security attestations are stored as separate OCI artifacts:
+Security attestations are stored as separate OCI artifacts with `application/vnd.in-toto+json` media type:
 
-- **Provenance**: `application/vnd.in-toto+json` media type with DSSE envelope
-- **SBOM**: `application/spdx+json` or `application/vnd.cyclonedx+json` media type with DSSE envelope
+- **Provenance**: DSSE envelope with in-toto SLSA provenance attestation
+  - **Predicate Type**: `https://slsa.dev/provenance/v1`
+- **SBOM**: DSSE envelope with in-toto SPDX SBOM attestation
+  - **Predicate Type**: `https://spdx.dev/Document/v2.3`
 
 ## Development
 

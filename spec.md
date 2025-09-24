@@ -36,9 +36,11 @@ Dragonglass addresses these security concerns by establishing a verified plugin 
 ### OCI Artifact Structure
 - **Plugin Files**: Located at root of OCI image
 - **Metadata**: Obsidian plugin manifest information stored as OCI manifest annotations
-- **Attestations**: SLSA provenance and SPDX SBOM stored as separate OCI artifacts with standard media types in DSSE format
-  - **Provenance**: `application/vnd.in-toto+json` media type
-  - **SBOM**: `application/vnd.cyclonedx+json` or `application/spdx+json` media type
+- **Attestations**: SLSA provenance and SBOM stored as separate OCI artifacts with standard media types in DSSE format
+  - **Provenance**: `application/vnd.in-toto+json` media type with SLSA provenance attestation
+    - **Predicate Type**: `https://slsa.dev/provenance/v1`
+  - **SBOM**: `application/vnd.in-toto+json` media type with SPDX SBOM attestation
+    - **Predicate Type**: `https://spdx.dev/Document/v2.3`
   - **Format**: Dead Simple Signing Envelope (DSSE) with in-toto attestation payloads
 
 ### Verification Standards
