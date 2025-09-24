@@ -42,39 +42,22 @@ The authentication uses the same proven flow as the GitHub CLI (gh).`,
 }
 
 func runAuthCommand(cfg *config.Config) error {
-	hostname := auth.GitHubHost
-
 	// Check if already authenticated
-	if auth.IsAuthenticated(hostname) {
-		username, err := auth.GetAuthenticatedUser(hostname)
+	if auth.IsAuthenticated() {
+		username, err := auth.GetAuthenticatedUser()
 		if err != nil {
 			// Don't fail completely if we can't get username details
 			username = "authenticated user"
 		}
 
-		fmt.Printf("✅ Already authenticated as %s on %s\n", username, hostname)
+		fmt.Printf("✅ Already authenticated as %s\n", username)
 		fmt.Printf("📦 Registry: %s\n", cfg.Registry.DefaultRegistry)
 		fmt.Println("\nUse 'dragonglass auth status' to view details.")
 		return nil
 	}
 
-	// User needs to authenticate
-	fmt.Printf("🔐 Authentication required to access GitHub Container Registry\n")
-	fmt.Printf("📦 Dragonglass needs permission to read packages from ghcr.io\n\n")
-
-	fmt.Printf("To authenticate, please run one of the following:\n\n")
-	fmt.Printf("1. Using GitHub CLI (recommended):\n")
-	fmt.Printf("   gh auth login --scopes %s\n\n", auth.RequiredScopes)
-
-	fmt.Printf("2. Using environment variable:\n")
-	fmt.Printf("   export GH_TOKEN=<your-github-token>\n\n")
-
-	fmt.Printf("3. Using config file:\n")
-	fmt.Printf("   echo '<your-token>' > ~/.config/gh/hosts.yml\n\n")
-
-	fmt.Printf("After authenticating, run this command again to verify your credentials.\n")
-
-	return fmt.Errorf("authentication required")
+	// Run device flow authentication
+	return auth.Authenticate()
 }
 
 func newStatusCommand() *cobra.Command {
@@ -83,33 +66,40 @@ func newStatusCommand() *cobra.Command {
 		Short: "View authentication status",
 		Long:  `Display current authentication status and user information.`,
 		Run: func(cmd *cobra.Command, args []string) {
-			hostname := auth.GitHubHost
-
-			if !auth.IsAuthenticated(hostname) {
-				fmt.Printf("❌ Not authenticated with %s\n", hostname)
-				fmt.Println("\nRun 'dragonglass auth' to see authentication options.")
+			if !auth.IsAuthenticated() {
+				fmt.Printf("❌ Not authenticated with %s\n", auth.GitHubHost)
+				fmt.Println("\nRun 'dragonglass auth' to authenticate.")
 				return
 			}
 
-			username, err := auth.GetAuthenticatedUser(hostname)
+			username, err := auth.GetAuthenticatedUser()
 			if err != nil {
 				username = "authenticated user"
 			}
 
-			token, err := auth.GetStoredToken(hostname)
+			token, err := auth.GetToken()
 			if err != nil {
 				fmt.Printf("Error getting token: %v\n", err)
+				return
+			}
+
+			// Get stored credential details
+			cred, err := auth.GetStoredCredential()
+			if err != nil {
+				fmt.Printf("Error getting credential details: %v\n", err)
 				return
 			}
 
 			// Don't show full token for security
 			maskedToken := maskToken(token)
 
-			fmt.Printf("✅ Authenticated with %s\n", hostname)
+			fmt.Printf("✅ Authenticated with %s\n", auth.GitHubHost)
 			fmt.Printf("👤 User: %s\n", username)
 			fmt.Printf("🔑 Token: %s\n", maskedToken)
+			fmt.Printf("📦 Scopes: %s\n", cred.Scopes)
 			fmt.Printf("📦 Can access: ghcr.io (GitHub Container Registry)\n")
-			fmt.Printf("🔧 Source: GitHub CLI configuration\n")
+			fmt.Printf("🔧 Source: %s\n", cred.Source)
+			fmt.Printf("📅 Created: %s\n", cred.CreatedAt.Format("2006-01-02 15:04:05"))
 		},
 	}
 }
@@ -120,17 +110,25 @@ func newLogoutCommand() *cobra.Command {
 		Short: "Sign out and remove stored credentials",
 		Long:  `Remove stored authentication credentials and sign out.`,
 		Run: func(cmd *cobra.Command, args []string) {
-			hostname := "github.com"
-
-			if !auth.IsAuthenticated(hostname) {
-				fmt.Printf("❌ Not currently authenticated with %s\n", hostname)
+			if !auth.IsAuthenticated() {
+				fmt.Printf("❌ Not currently authenticated\n")
 				return
 			}
 
-			// TODO: Implement logout functionality
-			// This would require using GitHub CLI's logout functionality
-			fmt.Printf("🚧 Logout functionality not yet implemented\n")
-			fmt.Printf("For now, you can use 'gh auth logout' to sign out from GitHub CLI\n")
+			// Get username before logout for confirmation
+			username, _ := auth.GetAuthenticatedUser()
+			if username == "" {
+				username = "authenticated user"
+			}
+
+			// Clear stored credentials
+			if err := auth.ClearStoredToken(); err != nil {
+				fmt.Printf("Error clearing credentials: %v\n", err)
+				return
+			}
+
+			fmt.Printf("✅ Successfully logged out %s\n", username)
+			fmt.Printf("🗑️  All stored credentials have been removed\n")
 		},
 	}
 }

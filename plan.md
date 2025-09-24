@@ -141,17 +141,18 @@ The lockfile should track installed plugins with enough information to verify an
 
 ### Prompt 4: GitHub App Authentication Structure
 ```
-Implement GitHub App device flow authentication. Extend the existing CLI by adding:
+Implement GitHub App native device flow authentication. Extend the existing CLI by adding:
 
 1. GitHub App configuration (app ID, client ID) as constants
-2. Device flow OAuth implementation using GitHub's device flow API
-3. Token response handling and validation
-4. Integration with the 'auth' command to complete the flow
-5. Basic token validation and refresh logic
-6. Error handling for network failures and authentication errors
-7. Unit tests for authentication flow (with mocked HTTP responses)
+2. Native device flow OAuth implementation using GitHub's device flow API
+3. URL-encoded response parsing for device codes and access tokens
+4. Token response handling and validation
+5. Integration with the 'auth' command to complete the flow
+6. Basic token validation and refresh logic
+7. Error handling for network failures and authentication errors
+8. Unit tests for authentication flow (with mocked HTTP responses)
 
-Do not implement credential storage yet - just handle the authentication flow and return tokens. The auth command should guide users through the device flow process with clear instructions.
+Do not rely on go-gh library - implement the device flow natively. The auth command should guide users through the device flow process with clear instructions and handle GitHub's form-encoded responses.
 ```
 
 ### Prompt 5: Credential Storage
@@ -173,15 +174,16 @@ Update the authentication flow to automatically store tokens after successful au
 ```
 Implement OCI registry client functionality. Build on existing authentication by adding:
 
-1. OCI registry client using oras-go library
-2. ghcr.io registry configuration and authentication integration
-3. OCI artifact pulling with progress indication
-4. Image manifest and layer downloading
-5. Basic artifact verification (digest validation)
-6. Error handling for network failures and authentication issues
-7. Unit tests with mocked registry responses
+1. OCI registry client using oras-go library with native authentication
+2. ORAS auth.StaticCredential configuration for GitHub token authentication
+3. ghcr.io registry configuration with proper credential handling
+4. OCI artifact pulling with progress indication
+5. Image manifest and layer downloading
+6. Basic artifact verification (digest validation)
+7. Error handling for network failures and authentication issues
+8. Unit tests with mocked registry responses
 
-The client should authenticate using stored GitHub tokens and handle common registry errors gracefully. Include logging for debugging registry interactions.
+The client should use ORAS authentication patterns (auth.StaticCredential) rather than custom HTTP clients for registry authentication. Include logging for debugging registry interactions.
 ```
 
 ### Prompt 7: OCI Manifest Parsing

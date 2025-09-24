@@ -1,6 +1,6 @@
 # Dragonglass CLI Development Todo
 
-## Project Status: Planning Complete ✅
+## Project Status: Phase 3 Complete ✅
 
 ### Completed Planning Tasks
 - [x] Read and analyze project specification
@@ -11,74 +11,77 @@
 - [x] Store comprehensive plan in plan.md
 - [x] Create todo.md for state tracking
 
-## Implementation Phase: Ready to Begin
+## Implementation Progress
 
-### Phase 1: Foundation (Steps 1-3)
-- [ ] Step 1: Project Bootstrap
-  - [ ] Initialize Go modules and project structure
-  - [ ] Set up Cobra CLI with subcommands
-  - [ ] Implement placeholder command handlers
-  - [ ] Create Makefile and basic build system
-  - [ ] Verify `dragonglass --help` functionality
+### Phase 1: Foundation (Steps 1-3) ✅
+- [x] Step 1: Project Bootstrap
+  - [x] Initialize Go modules and project structure
+  - [x] Set up Cobra CLI with subcommands
+  - [x] Implement placeholder command handlers
+  - [x] Create Makefile and basic build system
+  - [x] Verify `dragonglass --help` functionality
 
-- [ ] Step 2: Configuration Management
-  - [ ] Design Config struct for user preferences
-  - [ ] Implement config file I/O for `.obsidian/` directories
-  - [ ] Add directory traversal for config discovery
-  - [ ] Create default configuration and validation
-  - [ ] Write unit tests for configuration system
+- [x] Step 2: Configuration Management
+  - [x] Design Config struct for user preferences
+  - [x] Implement config file I/O for `.obsidian/` directories
+  - [x] Add directory traversal for config discovery
+  - [x] Create default configuration and validation
+  - [x] Write unit tests for configuration system
 
-- [ ] Step 3: Lockfile Management
-  - [ ] Design Lockfile struct with plugin metadata
-  - [ ] Implement lockfile CRUD operations
-  - [ ] Add JSON marshaling with proper field handling
-  - [ ] Create lockfile versioning system
-  - [ ] Write comprehensive lockfile unit tests
+- [x] Step 3: Lockfile Management
+  - [x] Design Lockfile struct with plugin metadata
+  - [x] Implement lockfile CRUD operations
+  - [x] Add JSON marshaling with proper field handling
+  - [x] Create lockfile versioning system
+  - [x] Write comprehensive lockfile unit tests
 
-### Phase 2: Authentication (Steps 4-5)
-- [ ] Step 4: GitHub App Authentication Structure
-  - [ ] Implement GitHub OAuth device flow
-  - [ ] Add token handling and validation
-  - [ ] Create user-friendly auth command flow
-  - [ ] Add network error handling
-  - [ ] Write authentication unit tests
+### Phase 2: Authentication (Steps 4-5) ✅
+- [x] Step 4: GitHub App Authentication Structure
+  - [x] Implement native GitHub OAuth device flow (no go-gh dependency)
+  - [x] Add URL-encoded response parsing for device codes and tokens
+  - [x] Create user-friendly auth command flow with device flow instructions
+  - [x] Add network error handling and authentication debugging
+  - [x] Write authentication unit tests with form-encoded responses
 
-- [ ] Step 5: Credential Storage
-  - [ ] Integrate OS keychain libraries
-  - [ ] Implement fallback file storage with encryption
-  - [ ] Add token persistence and retrieval
-  - [ ] Create credential cleanup functionality
-  - [ ] Write cross-platform storage tests
+- [x] Step 5: Credential Storage
+  - [x] Integrate OS keychain libraries with zalando/go-keyring
+  - [x] Implement fallback file storage with proper permissions
+  - [x] Add token persistence and retrieval across CLI sessions
+  - [x] Create credential cleanup functionality for logout
+  - [x] Write cross-platform storage tests
+  - [x] Remove go-gh library dependency and implement native auth integration
 
-### Phase 3: OCI Integration (Steps 6-8)
-- [ ] Step 6: Basic OCI Registry Client
-  - [ ] Integrate oras-go OCI library
-  - [ ] Implement ghcr.io authentication
-  - [ ] Add artifact downloading with progress
-  - [ ] Create registry error handling
-  - [ ] Write OCI client unit tests
+### Phase 3: OCI Integration (Steps 6-8) ✅
+- [x] Step 6: Basic OCI Registry Client
+  - [x] Integrate oras-go OCI library with native authentication
+  - [x] Implement ORAS auth.StaticCredential for GitHub token auth
+  - [x] Add artifact downloading with progress indication
+  - [x] Create comprehensive registry error handling
+  - [x] Write OCI client unit tests
+  - [x] Successfully test authentication with ghcr.io/gillisandrew/dragonglass-poc
 
-- [ ] Step 7: OCI Manifest Parsing
-  - [ ] Parse OCI manifest annotations
-  - [ ] Extract Obsidian plugin metadata
-  - [ ] Add metadata validation logic
-  - [ ] Integrate with OCI client operations
-  - [ ] Write manifest parsing tests
+- [x] Step 7: OCI Manifest Parsing
+  - [x] Parse OCI manifest annotations
+  - [x] Extract Obsidian plugin metadata
+  - [x] Add metadata validation logic
+  - [x] Integrate with OCI client operations
+  - [x] Write manifest parsing tests
 
-- [ ] Step 8: Plugin File Extraction
-  - [ ] Implement OCI layer extraction
-  - [ ] Add plugin structure validation
-  - [ ] Create file security checks
-  - [ ] Add temporary directory management
-  - [ ] Write extraction unit tests
+- [x] Step 8: Plugin File Extraction
+  - [x] Implement OCI layer extraction
+  - [x] Add plugin structure validation
+  - [x] Create file security checks
+  - [x] Add temporary directory management
+  - [x] Write extraction unit tests
 
-### Phase 4: Verification Pipeline (Steps 9-12)
-- [ ] Step 9: SLSA Provenance Verification
-  - [ ] Parse SLSA attestations from OCI artifacts
-  - [ ] Implement workflow verification logic
-  - [ ] Add sigstore signature verification
-  - [ ] Create detailed error reporting
-  - [ ] Write provenance verification tests
+### Phase 4: Verification Pipeline (Steps 9-12) ⚡ IN PROGRESS
+- [x] Step 9: SLSA Provenance Verification ✅
+  - [x] Parse SLSA attestations from OCI artifacts with layer extraction
+  - [x] Implement comprehensive workflow verification logic
+  - [x] Add Sigstore bundle parsing and DSSE envelope validation
+  - [x] Create detailed error reporting with clean output
+  - [x] Write provenance verification tests with protojson support
+  - [x] Validate against trusted builder: `https://github.com/gillisandrew/dragonglass-poc/.github/workflows/build.yml@refs/heads/main`
 
 - [ ] Step 10: SPDX SBOM Parsing
   - [ ] Integrate SPDX parsing libraries
@@ -124,7 +127,13 @@
   - [ ] Write verify-only unit tests
 
 ## Current Priority
-**Next Action**: Begin Phase 1, Step 1 - Project Bootstrap
+**Next Action**: Begin Phase 4, Step 9 - SLSA Provenance Verification
+
+## Recent Achievements ✨
+- **Completed Native Authentication**: Removed go-gh dependency and implemented pure GitHub App device flow
+- **Fixed ORAS Authentication**: Integrated auth.StaticCredential for proper GHCR access
+- **Successful Registry Access**: Verified working authentication with ghcr.io/gillisandrew/dragonglass-poc
+- **Plugin Metadata Retrieval**: Successfully parsing 16 annotation fields from OCI manifests
 
 ## Notes
 - Each step should include comprehensive unit tests

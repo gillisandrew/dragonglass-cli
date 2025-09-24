@@ -33,12 +33,10 @@ func TestValidateToken(t *testing.T) {
 	// The GitHub CLI's IsValidToken function makes real API calls
 }
 
-func TestGetStoredToken(t *testing.T) {
-	hostname := "github.com"
-
-	// This test will typically fail unless user is actually authenticated with gh CLI
+func TestGetToken(t *testing.T) {
+	// This test will typically fail unless user has stored credentials
 	// which is expected in most test environments
-	_, err := GetStoredToken(hostname)
+	_, err := GetToken()
 	if err != nil {
 		// This is expected in test environments without authentication
 		t.Logf("No stored token found (expected in test environment): %v", err)
@@ -46,21 +44,17 @@ func TestGetStoredToken(t *testing.T) {
 }
 
 func TestIsAuthenticated(t *testing.T) {
-	hostname := "github.com"
-
 	// Test with likely unauthenticated test environment
-	authenticated := IsAuthenticated(hostname)
+	authenticated := IsAuthenticated()
 
 	// In most test environments, this should be false
-	// But we don't assert false as the test environment might have gh CLI configured
-	t.Logf("Authentication status for %s: %v", hostname, authenticated)
+	// But we don't assert false as the test environment might have stored credentials
+	t.Logf("Authentication status: %v", authenticated)
 }
 
 func TestGetAuthenticatedUser(t *testing.T) {
-	hostname := "github.com"
-
 	// This will typically fail in test environments
-	username, err := GetAuthenticatedUser(hostname)
+	username, err := GetAuthenticatedUser()
 	if err != nil {
 		// Expected in test environments without authentication
 		t.Logf("Failed to get authenticated user (expected in test environment): %v", err)

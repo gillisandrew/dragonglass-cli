@@ -18,14 +18,17 @@ import (
 	ocispec "github.com/opencontainers/image-spec/specs-go/v1"
 	"oras.land/oras-go/v2/registry"
 	"oras.land/oras-go/v2/registry/remote"
+	"oras.land/oras-go/v2/registry/remote/auth"
+	"oras.land/oras-go/v2/registry/remote/retry"
 
-	"github.com/gillisandrew/dragonglass-cli/internal/auth"
+	internalAuth "github.com/gillisandrew/dragonglass-cli/internal/auth"
 	"github.com/gillisandrew/dragonglass-cli/internal/plugin"
 )
 
 type Client struct {
 	httpClient *http.Client
 	registry   *remote.Registry
+	token      string
 }
 
 type PullResult struct {
@@ -51,14 +54,11 @@ const (
 
 // NewClient creates a new OCI registry client with GitHub authentication
 func NewClient() (*Client, error) {
-	// Get authenticated HTTP client from our auth package
-	httpClient, err := auth.GetHTTPClient()
+	// Get GitHub token from our auth package
+	token, err := internalAuth.GetToken()
 	if err != nil {
-		return nil, fmt.Errorf("failed to create authenticated HTTP client: %w", err)
+		return nil, fmt.Errorf("failed to get authentication token: %w", err)
 	}
-
-	// Configure timeout
-	httpClient.Timeout = DefaultTimeout
 
 	// Create ORAS remote registry
 	reg, err := remote.NewRegistry(DefaultRegistry)
@@ -66,13 +66,41 @@ func NewClient() (*Client, error) {
 		return nil, fmt.Errorf("failed to create registry client: %w", err)
 	}
 
-	// Configure the registry with our authenticated HTTP client
-	reg.Client = httpClient
+	// Configure ORAS auth client with GitHub token
+	// For GHCR, username can be anything when using token authentication
+	reg.Client = &auth.Client{
+		Client: retry.DefaultClient,
+		Cache:  auth.NewCache(),
+		Credential: auth.StaticCredential(DefaultRegistry, auth.Credential{
+			Username: "token",
+			Password: token,
+		}),
+	}
+
+	// Also create regular HTTP client for backward compatibility
+	httpClient, err := internalAuth.GetHTTPClient()
+	if err != nil {
+		return nil, fmt.Errorf("failed to create HTTP client: %w", err)
+	}
+	httpClient.Timeout = DefaultTimeout
 
 	return &Client{
 		httpClient: httpClient,
 		registry:   reg,
+		token:      token,
 	}, nil
+}
+
+// setupRepositoryAuth configures ORAS authentication for a repository
+func (c *Client) setupRepositoryAuth(repo *remote.Repository) {
+	repo.Client = &auth.Client{
+		Client: retry.DefaultClient,
+		Cache:  auth.NewCache(),
+		Credential: auth.StaticCredential(repo.Reference.Registry, auth.Credential{
+			Username: "token",
+			Password: c.token,
+		}),
+	}
 }
 
 // SetRegistry allows changing the target registry (useful for testing)
@@ -82,7 +110,16 @@ func (c *Client) SetRegistry(hostname string) error {
 		return fmt.Errorf("failed to create registry for %s: %w", hostname, err)
 	}
 
-	reg.Client = c.httpClient
+	// Configure ORAS auth client with GitHub token
+	reg.Client = &auth.Client{
+		Client: retry.DefaultClient,
+		Cache:  auth.NewCache(),
+		Credential: auth.StaticCredential(hostname, auth.Credential{
+			Username: "token",
+			Password: c.token,
+		}),
+	}
+
 	c.registry = reg
 	return nil
 }
@@ -101,8 +138,8 @@ func (c *Client) Pull(ctx context.Context, imageRef string, destDir string, prog
 		return nil, fmt.Errorf("failed to create repository: %w", err)
 	}
 
-	// Use our authenticated HTTP client
-	repo.Client = c.httpClient
+	// Configure ORAS authentication
+	c.setupRepositoryAuth(repo)
 
 	// Resolve the reference to get the manifest descriptor
 	manifestDesc, err := repo.Resolve(ctx, ref.Reference)
@@ -206,7 +243,8 @@ func (c *Client) GetManifest(ctx context.Context, imageRef string) (*ocispec.Man
 		return nil, nil, fmt.Errorf("failed to create repository: %w", err)
 	}
 
-	repo.Client = c.httpClient
+	// Configure ORAS authentication
+	c.setupRepositoryAuth(repo)
 
 	// Resolve and fetch manifest
 	manifestDesc, err := repo.Resolve(ctx, ref.Reference)
@@ -245,7 +283,8 @@ func (c *Client) ValidateAccess(ctx context.Context, imageRef string) error {
 		return fmt.Errorf("failed to create repository: %w", err)
 	}
 
-	repo.Client = c.httpClient
+	// Configure ORAS authentication
+	c.setupRepositoryAuth(repo)
 
 	// Try to resolve the reference
 	_, err = repo.Resolve(ctx, ref.Reference)

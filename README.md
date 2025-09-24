@@ -10,7 +10,7 @@ Dragonglass mitigates supply chain attacks and enables continuous verification o
 
 - **Supply Chain Security**: SLSA provenance and SPDX SBOM verification
 - **OCI Registry Integration**: Secure plugin distribution via ghcr.io
-- **GitHub Authentication**: Seamless integration with GitHub CLI credentials
+- **Native GitHub Authentication**: OAuth device flow with secure credential storage
 - **Per-Vault Management**: Configuration and lockfile per Obsidian vault
 - **Configurable Annotation Namespace**: Build-time configurable plugin metadata keys
 
@@ -30,8 +30,11 @@ make install
 ## Usage
 
 ```bash
-# Authenticate with GitHub
+# Authenticate with GitHub using device flow
 dragonglass auth
+
+# Check authentication status
+dragonglass auth status
 
 # Install a verified plugin
 dragonglass install ghcr.io/owner/repo:tag
@@ -41,6 +44,9 @@ dragonglass verify ghcr.io/owner/repo:tag
 
 # List installed plugins
 dragonglass list
+
+# Logout and clear stored credentials
+dragonglass auth logout
 ```
 
 ## Architecture
@@ -50,8 +56,8 @@ dragonglass list
 - ✅ **Project Bootstrap**: Go CLI with Cobra framework
 - ✅ **Configuration Management**: Per-vault config in `.obsidian/dragonglass-config.json`
 - ✅ **Lockfile Management**: Plugin tracking in `.obsidian/dragonglass-lock.json`
-- ✅ **GitHub Authentication**: OAuth device flow via go-gh library
-- ✅ **OCI Registry Client**: Authenticated artifact pulling with oras-go
+- ✅ **Native GitHub Authentication**: OAuth device flow with secure credential storage
+- ✅ **OCI Registry Client**: ORAS-authenticated artifact pulling from ghcr.io
 - ✅ **Plugin Metadata Parsing**: Configurable annotation namespace support
 
 ### Components In Progress
@@ -61,6 +67,28 @@ dragonglass list
 - 🔄 **SBOM Analysis**: SPDX/CycloneDX document processing
 - 🔄 **Vulnerability Scanning**: CVE database integration
 - 🔄 **Plugin Installation**: File extraction to `.obsidian/plugins/`
+
+## Authentication
+
+Dragonglass uses GitHub App device flow authentication to securely access GitHub Container Registry:
+
+1. **Device Flow**: Native OAuth implementation following GitHub's device flow specification
+2. **Secure Storage**: Credentials stored in OS keychain with file fallback
+3. **Token Management**: Automatic token validation and refresh
+4. **Cross-Platform**: Works on macOS, Linux, and Windows
+
+### Authentication Commands
+
+```bash
+# Start authentication flow
+dragonglass auth
+
+# Check current status
+dragonglass auth status
+
+# Clear stored credentials
+dragonglass auth logout
+```
 
 ## Plugin Metadata Format
 

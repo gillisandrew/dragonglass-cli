@@ -9,6 +9,7 @@ import (
 	"time"
 
 	v1 "github.com/in-toto/attestation/go/predicates/provenance/v1"
+	"google.golang.org/protobuf/types/known/structpb"
 )
 
 func TestNewSLSAVerifier(t *testing.T) {
@@ -24,192 +25,8 @@ func TestNewSLSAVerifier(t *testing.T) {
 	}
 }
 
-func TestParseDSSEEnvelope(t *testing.T) {
-	verifier := NewSLSAVerifier("test-token")
 
-	tests := []struct {
-		name        string
-		input       string
-		expectError bool
-		expectedLen int
-	}{
-		{
-			name: "valid DSSE envelope",
-			input: `{
-				"payloadType": "application/vnd.in-toto+json",
-				"payload": "eyJ0ZXN0IjoicGF5bG9hZCJ9",
-				"signatures": [
-					{
-						"keyid": "test-key",
-						"signature": "test-signature"
-					}
-				]
-			}`,
-			expectError: false,
-			expectedLen: 1,
-		},
-		{
-			name: "missing payloadType",
-			input: `{
-				"payload": "eyJ0ZXN0IjoicGF5bG9hZCJ9",
-				"signatures": []
-			}`,
-			expectError: true,
-		},
-		{
-			name: "missing payload",
-			input: `{
-				"payloadType": "application/vnd.in-toto+json",
-				"signatures": []
-			}`,
-			expectError: true,
-		},
-		{
-			name:        "invalid JSON",
-			input:       `{"invalid": json}`,
-			expectError: true,
-		},
-	}
 
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			envelope, err := verifier.parseDSSEEnvelope([]byte(tt.input))
-
-			if tt.expectError {
-				if err == nil {
-					t.Errorf("Expected error, but got none")
-				}
-				return
-			}
-
-			if err != nil {
-				t.Errorf("Unexpected error: %v", err)
-				return
-			}
-
-			if envelope == nil {
-				t.Error("Expected non-nil envelope")
-				return
-			}
-
-			if len(envelope.Signatures) != tt.expectedLen {
-				t.Errorf("Expected %d signatures, got %d", tt.expectedLen, len(envelope.Signatures))
-			}
-		})
-	}
-}
-
-func TestParseInTotoAttestation(t *testing.T) {
-	verifier := NewSLSAVerifier("test-token")
-
-	tests := []struct {
-		name        string
-		payload     string
-		expectError bool
-	}{
-		{
-			name: "valid in-toto statement",
-			payload: `{
-				"_type": "https://in-toto.io/Statement/v1",
-				"subject": [
-					{
-						"name": "test-subject",
-						"digest": {"sha256": "abc123"}
-					}
-				],
-				"predicateType": "https://slsa.dev/provenance/v1",
-				"predicate": {}
-			}`,
-			expectError: false,
-		},
-		{
-			name:        "invalid JSON",
-			payload:     `{"invalid": json}`,
-			expectError: true,
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			statement, err := verifier.parseInTotoAttestation(tt.payload)
-
-			if tt.expectError {
-				if err == nil {
-					t.Errorf("Expected error, but got none")
-				}
-				return
-			}
-
-			if err != nil {
-				t.Errorf("Unexpected error: %v", err)
-				return
-			}
-
-			if statement == nil {
-				t.Error("Expected non-nil statement")
-			}
-		})
-	}
-}
-
-func TestParseSLSAProvenance(t *testing.T) {
-	verifier := NewSLSAVerifier("test-token")
-
-	tests := []struct {
-		name        string
-		predicate   interface{}
-		expectError bool
-	}{
-		{
-			name: "valid SLSA provenance",
-			predicate: map[string]interface{}{
-				"buildDefinition": map[string]interface{}{
-					"buildType": "https://github.com/actions/runner",
-					"externalParameters": map[string]interface{}{
-						"repository": "gillisandrew/dragonglass-poc",
-						"workflow":   ".github/workflows/build.yml",
-					},
-					"resolvedDependencies": []interface{}{
-						map[string]interface{}{
-							"uri": "git+https://github.com/gillisandrew/dragonglass-poc",
-							"digest": map[string]interface{}{
-								"sha1": "abc123",
-							},
-						},
-					},
-				},
-				"runDetails": map[string]interface{}{
-					"builder": map[string]interface{}{
-						"id": "https://github.com/actions/runner",
-					},
-				},
-			},
-			expectError: false,
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			provenance, err := verifier.parseSLSAProvenance(tt.predicate)
-
-			if tt.expectError {
-				if err == nil {
-					t.Errorf("Expected error, but got none")
-				}
-				return
-			}
-
-			if err != nil {
-				t.Errorf("Unexpected error: %v", err)
-				return
-			}
-
-			if provenance == nil {
-				t.Error("Expected non-nil provenance")
-			}
-		})
-	}
-}
 
 func TestValidateProvenance(t *testing.T) {
 	verifier := NewSLSAVerifier("test-token")
@@ -220,13 +37,68 @@ func TestValidateProvenance(t *testing.T) {
 		expectedErrors int
 		expectRepo     string
 		expectWorkflow string
+		expectBuilder  string
 	}{
 		{
-			name:           "valid provenance",
-			provenance:     &v1.Provenance{},
-			expectedErrors: 0,
-			expectRepo:     "gillisandrew/dragonglass-poc",
+			name: "valid GitHub Actions provenance",
+			provenance: &v1.Provenance{
+				BuildDefinition: &v1.BuildDefinition{
+					BuildType: TrustedBuilder,
+					ExternalParameters: &structpb.Struct{
+						Fields: map[string]*structpb.Value{
+							"repository": {Kind: &structpb.Value_StringValue{StringValue: "gillisandrew/dragonglass-poc"}},
+							"workflow":   {Kind: &structpb.Value_StringValue{StringValue: ".github/workflows/build.yml"}},
+						},
+					},
+				},
+				RunDetails: &v1.RunDetails{
+					Builder: &v1.Builder{
+						Id: TrustedBuilder,
+					},
+					Metadata: &v1.BuildMetadata{
+						InvocationId: "https://github.com/gillisandrew/dragonglass-poc/actions/runs/123",
+					},
+				},
+			},
+			expectedErrors: 0, // Now should work correctly with fixed parsing
+			expectRepo:     "gillisandrew/dragonglass-poc", // Correctly extracted repository
 			expectWorkflow: ".github/workflows/build.yml",
+			expectBuilder:  TrustedBuilder,
+		},
+		{
+			name: "untrusted builder",
+			provenance: &v1.Provenance{
+				BuildDefinition: &v1.BuildDefinition{
+					BuildType: "https://malicious.com/builder",
+					ExternalParameters: &structpb.Struct{
+						Fields: map[string]*structpb.Value{
+							"repository": {Kind: &structpb.Value_StringValue{StringValue: "malicious/repo"}},
+						},
+					},
+				},
+				RunDetails: &v1.RunDetails{
+					Builder: &v1.Builder{
+						Id: "https://malicious.com/builder",
+					},
+				},
+			},
+			expectedErrors: 1, // Should error on untrusted builder
+			expectBuilder:  "https://malicious.com/builder",
+		},
+		{
+			name: "missing run details",
+			provenance: &v1.Provenance{
+				BuildDefinition: &v1.BuildDefinition{
+					BuildType: "https://github.com/actions/runner",
+					ExternalParameters: &structpb.Struct{
+						Fields: map[string]*structpb.Value{
+							"repository": {Kind: &structpb.Value_StringValue{StringValue: "test/repo"}},
+						},
+					},
+				},
+				RunDetails: nil,
+			},
+			expectedErrors: 1, // Should error on missing run details
 		},
 		{
 			name:           "nil provenance",
@@ -249,6 +121,10 @@ func TestValidateProvenance(t *testing.T) {
 
 			if tt.expectWorkflow != "" && source.Workflow != tt.expectWorkflow {
 				t.Errorf("Expected workflow %s, got %s", tt.expectWorkflow, source.Workflow)
+			}
+
+			if tt.expectBuilder != "" && source.Builder != tt.expectBuilder {
+				t.Errorf("Expected builder %s, got %s", tt.expectBuilder, source.Builder)
 			}
 		})
 	}

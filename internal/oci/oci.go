@@ -80,14 +80,14 @@ func (r *Repository) GetSLSAAttestations(ctx context.Context, subjectDesc ocispe
 			// Check if this referrer has the SLSA provenance predicate type annotation
 			if predicateType, exists := referrer.Annotations["dev.sigstore.bundle.predicateType"]; exists {
 				if predicateType == "https://slsa.dev/provenance/v1" {
-					// This is a SLSA provenance attestation, fetch it
-					rc, err := r.Fetch(ctx, referrer)
+					// This is a SLSA provenance attestation - we need to extract the bundle from the manifest's layer
+					bundleReader, err := r.extractBundleFromManifest(ctx, referrer)
 					if err != nil {
-						return fmt.Errorf("failed to fetch SLSA referrer %s: %w", referrer.Digest, err)
+						return fmt.Errorf("failed to extract bundle from SLSA referrer %s: %w", referrer.Digest, err)
 					}
 
 					// Note: caller is responsible for closing the readers
-					attestations = append(attestations, rc)
+					attestations = append(attestations, bundleReader)
 				}
 			}
 		}
@@ -96,6 +96,45 @@ func (r *Repository) GetSLSAAttestations(ctx context.Context, subjectDesc ocispe
 		return nil, nil, fmt.Errorf("failed to fetch referrers for %s: %w", subjectDesc.Digest, err)
 	}
 	return &subjectDesc, attestations, nil
+}
+
+// extractBundleFromManifest fetches the OCI manifest and extracts the Sigstore bundle from its layer
+func (r *Repository) extractBundleFromManifest(ctx context.Context, manifestDesc ocispec.Descriptor) (io.ReadCloser, error) {
+	// Fetch the manifest content
+	manifestReader, err := r.Fetch(ctx, manifestDesc)
+	if err != nil {
+		return nil, fmt.Errorf("failed to fetch manifest: %w", err)
+	}
+	defer manifestReader.Close()
+
+	// Read and parse the manifest
+	manifestData, err := content.ReadAll(manifestReader, manifestDesc)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read manifest: %w", err)
+	}
+
+	var manifest ocispec.Manifest
+	if err := json.Unmarshal(manifestData, &manifest); err != nil {
+		return nil, fmt.Errorf("failed to unmarshal manifest: %w", err)
+	}
+
+	// Find the bundle layer (should be the first and only layer in attestation artifacts)
+	if len(manifest.Layers) == 0 {
+		return nil, fmt.Errorf("no layers found in attestation manifest")
+	}
+
+	bundleLayer := manifest.Layers[0]
+	if bundleLayer.MediaType != "application/vnd.dev.sigstore.bundle.v0.3+json" {
+		return nil, fmt.Errorf("unexpected layer media type: %s", bundleLayer.MediaType)
+	}
+
+	// Fetch the bundle layer content
+	bundleReader, err := r.Fetch(ctx, bundleLayer)
+	if err != nil {
+		return nil, fmt.Errorf("failed to fetch bundle layer: %w", err)
+	}
+
+	return bundleReader, nil
 }
 
 // Fetch the content
