@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"os"
+	"path/filepath"
 
 	ocispec "github.com/opencontainers/image-spec/specs-go/v1"
 	"oras.land/oras-go/v2/content"
@@ -135,6 +137,56 @@ func (r *Repository) extractBundleFromManifest(ctx context.Context, manifestDesc
 	}
 
 	return bundleReader, nil
+}
+
+// ExtractPluginFiles extracts main.js and styles.css from OCI layers to target directory
+func (r *Repository) ExtractPluginFiles(ctx context.Context, manifest *ocispec.Manifest, targetDir string) error {
+	// Create target directory if it doesn't exist
+	if err := os.MkdirAll(targetDir, 0755); err != nil {
+		return fmt.Errorf("failed to create target directory: %w", err)
+	}
+
+	// Process each layer (expecting main.js and styles.css)
+	for _, layer := range manifest.Layers {
+		// Get filename from layer annotations
+		filename, ok := layer.Annotations["org.opencontainers.image.title"]
+		if !ok || filename == "" {
+			continue // Skip layers without filename annotation
+		}
+
+		// Only process main.js and styles.css
+		if filename != "main.js" && filename != "styles.css" {
+			continue
+		}
+
+		// Fetch layer content
+		layerReader, err := r.Fetch(ctx, layer)
+		if err != nil {
+			return fmt.Errorf("failed to fetch %s: %w", filename, err)
+		}
+		defer layerReader.Close()
+
+		// Read layer content
+		layerData, err := content.ReadAll(layerReader, layer)
+		if err != nil {
+			return fmt.Errorf("failed to read %s: %w", filename, err)
+		}
+
+		// Write file to target directory
+		filePath := filepath.Join(targetDir, filename)
+		if err := os.WriteFile(filePath, layerData, 0644); err != nil {
+			return fmt.Errorf("failed to write %s: %w", filename, err)
+		}
+	}
+
+	return nil
+}
+
+// FileInfo represents information about a file in a layer
+type FileInfo struct {
+	Name string
+	Size int64
+	Mode uint32
 }
 
 // Fetch the content

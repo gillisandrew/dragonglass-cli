@@ -12,6 +12,16 @@
 - Follow conventional commit format (feat:, fix:, docs:, etc.)
 - Focus only on describing the actual changes made
 
+## Code Style Guidelines
+
+### No Emoji Policy
+- **NEVER use emoji characters in output, messages, or code comments**
+- Use clear, descriptive text instead of visual indicators
+- Focus on professional, clean terminal output
+- Examples:
+  - Bad: `fmt.Printf("🔍 Verifying plugin...")`
+  - Good: `fmt.Printf("Verifying plugin...")`
+
 ## Project Overview
 
 **Dragonglass CLI** is a secure Obsidian plugin manager implementing supply chain security through:
