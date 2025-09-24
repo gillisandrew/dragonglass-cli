@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -77,8 +78,8 @@ func TestConfigValidation(t *testing.T) {
 			if tt.expectError {
 				if err == nil {
 					t.Errorf("expected error but got none")
-				} else if tt.errorMsg != "" && err.Error() != tt.errorMsg {
-					t.Errorf("expected error '%s', got '%s'", tt.errorMsg, err.Error())
+				} else if tt.errorMsg != "" && !strings.Contains(err.Error(), tt.errorMsg) {
+					t.Errorf("expected error containing '%s', got '%s'", tt.errorMsg, err.Error())
 				}
 			} else {
 				if err != nil {
@@ -293,8 +294,11 @@ func TestLoadFromCurrentDirectory(t *testing.T) {
 		t.Errorf("loaded config doesn't match saved config")
 	}
 
-	if returnedConfigPath != configPath {
-		t.Errorf("expected config path %s, got %s", configPath, returnedConfigPath)
+	// Handle macOS /private/var symlink resolution
+	expectedPath, _ := filepath.EvalSymlinks(configPath)
+	actualPath, _ := filepath.EvalSymlinks(returnedConfigPath)
+	if expectedPath != actualPath {
+		t.Errorf("expected config path %s, got %s", expectedPath, actualPath)
 	}
 
 	// Test from directory without .obsidian

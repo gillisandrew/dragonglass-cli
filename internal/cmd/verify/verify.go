@@ -8,9 +8,10 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/gillisandrew/dragonglass-cli/internal/config"
+	"github.com/gillisandrew/dragonglass-cli/internal/lockfile"
 )
 
-func NewVerifyCommand(cfg *config.Config, configPath string, configErr error) *cobra.Command {
+func NewVerifyCommand(cfg *config.Config, configPath string, configErr error, lockfileData *lockfile.Lockfile, lockfilePath string, lockfileErr error) *cobra.Command {
 	return &cobra.Command{
 		Use:   "verify [OCI_IMAGE_REFERENCE]",
 		Short: "Verify a plugin without installing it",

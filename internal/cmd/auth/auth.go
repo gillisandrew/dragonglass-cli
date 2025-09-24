@@ -8,9 +8,10 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/gillisandrew/dragonglass-cli/internal/config"
+	"github.com/gillisandrew/dragonglass-cli/internal/lockfile"
 )
 
-func NewAuthCommand(cfg *config.Config, configPath string, configErr error) *cobra.Command {
+func NewAuthCommand(cfg *config.Config, configPath string, configErr error, lockfileData *lockfile.Lockfile, lockfilePath string, lockfileErr error) *cobra.Command {
 	return &cobra.Command{
 		Use:   "auth",
 		Short: "Authenticate with GitHub App using device flow",

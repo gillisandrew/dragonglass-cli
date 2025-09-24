@@ -8,9 +8,10 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/gillisandrew/dragonglass-cli/internal/config"
+	"github.com/gillisandrew/dragonglass-cli/internal/lockfile"
 )
 
-func NewInstallCommand(cfg *config.Config, configPath string, configErr error) *cobra.Command {
+func NewInstallCommand(cfg *config.Config, configPath string, configErr error, lockfileData *lockfile.Lockfile, lockfilePath string, lockfileErr error) *cobra.Command {
 	return &cobra.Command{
 		Use:   "install [OCI_IMAGE_REFERENCE]",
 		Short: "Install a verified plugin from OCI registry",
