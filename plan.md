@@ -215,32 +215,34 @@ The extractor should verify the extracted files form a valid Obsidian plugin bef
 
 ### Prompt 9: SLSA Provenance Verification
 ```
-Implement SLSA provenance verification. Extend the verification pipeline by adding:
+Implement SLSA provenance verification with DSSE attestations. Extend the verification pipeline by adding:
 
-1. SLSA attestation parsing from OCI artifact attestations
-2. Workflow verification against expected gillisandrew/dragonglass-poc workflow
-3. Signature verification using sigstore libraries
-4. Provenance claim validation (source repo, workflow, etc.)
-5. Error reporting with specific provenance failures
-6. Integration with existing OCI artifact processing
-7. Unit tests for provenance verification with test attestations
+1. Registry query for attestation artifacts using `application/vnd.in-toto+json` media type
+2. DSSE envelope parsing and signature verification using sigstore libraries
+3. In-toto attestation payload extraction from DSSE envelope
+4. SLSA provenance claim validation (source repo, workflow, builder, etc.)
+5. Workflow verification against expected gillisandrew/dragonglass-poc workflow
+6. Error reporting with specific provenance failures and attestation details
+7. Integration with existing OCI artifact processing
+8. Unit tests for DSSE verification and provenance parsing with test attestations
 
-The verifier should confirm plugins were built using the authorized workflow and report detailed information about provenance verification results.
+The verifier should discover and verify DSSE-wrapped SLSA attestations stored as separate OCI artifacts, confirming plugins were built using the authorized workflow.
 ```
 
 ### Prompt 10: SPDX SBOM Parsing
 ```
-Implement SPDX SBOM parsing and analysis. Build on the verification pipeline by adding:
+Implement SPDX SBOM parsing and analysis with DSSE attestations. Build on the verification pipeline by adding:
 
-1. SPDX document parsing from OCI attestations
-2. Dependency extraction and analysis
-3. Package relationship mapping
-4. License information extraction
-5. SBOM validation and completeness checks
-6. Integration with existing verification workflow
-7. Unit tests for SPDX parsing with various SBOM formats
+1. Registry query for SBOM artifacts using `application/spdx+json` or `application/vnd.cyclonedx+json` media types
+2. DSSE envelope parsing for SBOM attestations (if wrapped in DSSE)
+3. SPDX/CycloneDX document parsing from attestation payload
+4. Dependency extraction and analysis from SBOM data
+5. Package relationship mapping and license information extraction
+6. SBOM validation and completeness checks
+7. Integration with existing verification workflow and attestation discovery
+8. Unit tests for DSSE SBOM parsing with various SBOM formats and media types
 
-The parser should extract comprehensive dependency information from SPDX SBOMs and prepare it for vulnerability analysis.
+The parser should discover and extract comprehensive dependency information from DSSE-wrapped SBOMs stored as separate OCI artifacts, preparing it for vulnerability analysis.
 ```
 
 ### Prompt 11: Vulnerability Scanning Integration

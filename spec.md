@@ -36,7 +36,10 @@ Dragonglass addresses these security concerns by establishing a verified plugin 
 ### OCI Artifact Structure
 - **Plugin Files**: Located at root of OCI image
 - **Metadata**: Obsidian plugin manifest information stored as OCI manifest annotations
-- **Attestations**: SLSA provenance, SPDX SBOM, and vulnerability scan results attached as artifacts
+- **Attestations**: SLSA provenance and SPDX SBOM stored as separate OCI artifacts with standard media types in DSSE format
+  - **Provenance**: `application/vnd.in-toto+json` media type
+  - **SBOM**: `application/vnd.cyclonedx+json` or `application/spdx+json` media type
+  - **Format**: Dead Simple Signing Envelope (DSSE) with in-toto attestation payloads
 
 ### Verification Standards
 - **Provenance**: SLSA attestations
@@ -71,11 +74,13 @@ dragonglass list
 ## Verification Flow
 
 1. **Download**: Pull OCI artifact from ghcr.io using GitHub App authentication
-2. **Provenance Check**: Verify SLSA attestation against expected workflow
-3. **SBOM Analysis**: Parse SPDX document for dependency inventory
-4. **Vulnerability Scan**: Check for CVEs in dependencies
-5. **User Interaction**: Present findings with warning/acknowledgment prompt
-6. **Installation**: Extract plugin files to `.obsidian/plugins/` on user approval
+2. **Attestation Discovery**: Query registry for attestation artifacts using media type filters
+3. **DSSE Verification**: Verify DSSE envelope signatures and extract attestation payloads
+4. **Provenance Check**: Verify SLSA attestation against expected workflow and repository
+5. **SBOM Analysis**: Parse SPDX/CycloneDX document for dependency inventory
+6. **Vulnerability Scan**: Check for CVEs in dependencies using attestation data
+7. **User Interaction**: Present findings with warning/acknowledgment prompt
+8. **Installation**: Extract plugin files to `.obsidian/plugins/` on user approval
 
 ## Security Policies
 

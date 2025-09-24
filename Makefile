@@ -4,8 +4,11 @@ VERSION?=dev
 COMMIT_HASH=$(shell git rev-parse --short HEAD 2>/dev/null || echo "unknown")
 BUILD_TIME=$(shell date -u '+%Y-%m-%d %H:%M:%S UTC')
 
+# Plugin annotation configuration
+ANNOTATION_PREFIX?=vnd.obsidian.plugin
+
 # Go build flags
-LDFLAGS=-ldflags="-s -w -X 'main.Version=$(VERSION)' -X 'main.Commit=$(COMMIT_HASH)' -X 'main.BuildTime=$(BUILD_TIME)'"
+LDFLAGS=-ldflags="-s -w -X 'main.Version=$(VERSION)' -X 'main.Commit=$(COMMIT_HASH)' -X 'main.BuildTime=$(BUILD_TIME)' -X 'github.com/gillisandrew/dragonglass-cli/internal/plugin.AnnotationPrefix=$(ANNOTATION_PREFIX)'"
 
 # Default target
 .PHONY: all
@@ -71,7 +74,22 @@ deps:
 # Development build (with debug symbols)
 .PHONY: dev
 dev:
-	go build -o bin/$(BINARY_NAME) ./cmd/dragonglass
+	go build -ldflags="-X 'github.com/gillisandrew/dragonglass-cli/internal/plugin.AnnotationPrefix=$(ANNOTATION_PREFIX)'" -o bin/$(BINARY_NAME) ./cmd/dragonglass
+
+# Build with custom annotation prefix
+.PHONY: build-custom
+build-custom:
+	@echo "Building $(BINARY_NAME) with annotation prefix: $(ANNOTATION_PREFIX)"
+	go build $(LDFLAGS) -o bin/$(BINARY_NAME) ./cmd/dragonglass
+
+# Build for different environments
+.PHONY: build-dev
+build-dev:
+	$(MAKE) build-custom ANNOTATION_PREFIX=dev.obsidian.plugin
+
+.PHONY: build-test
+build-test:
+	$(MAKE) build-custom ANNOTATION_PREFIX=test.obsidian.plugin
 
 # Help
 .PHONY: help
@@ -79,6 +97,9 @@ help:
 	@echo "Available targets:"
 	@echo "  build        - Build the binary"
 	@echo "  build-all    - Build for all supported platforms"
+	@echo "  build-custom - Build with custom annotation prefix"
+	@echo "  build-dev    - Build with dev.obsidian.plugin prefix"
+	@echo "  build-test   - Build with test.obsidian.plugin prefix"
 	@echo "  test         - Run tests"
 	@echo "  test-coverage- Run tests with coverage report"
 	@echo "  clean        - Clean build artifacts"
@@ -88,3 +109,12 @@ help:
 	@echo "  deps         - Download and tidy dependencies"
 	@echo "  dev          - Development build"
 	@echo "  help         - Show this help"
+	@echo ""
+	@echo "Environment variables:"
+	@echo "  ANNOTATION_PREFIX - Plugin annotation namespace (default: vnd.obsidian.plugin)"
+	@echo "  VERSION          - Build version (default: dev)"
+	@echo ""
+	@echo "Examples:"
+	@echo "  make build ANNOTATION_PREFIX=custom.obsidian.plugin"
+	@echo "  make build-dev"
+	@echo "  make build-test"
