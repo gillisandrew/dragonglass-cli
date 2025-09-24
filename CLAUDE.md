@@ -4,6 +4,14 @@
 - **Developer**: CrazyScissors (Claude)
 - **Consul**: G-Doggeronius Maximus (Developer)
 
+## CRITICAL: Commit Message Guidelines
+
+- **NEVER include Co-Authored-By or any attribution in commit messages**
+- **NEVER include "Generated with Claude Code" or similar attribution**
+- Keep commit messages clean and professional
+- Follow conventional commit format (feat:, fix:, docs:, etc.)
+- Focus only on describing the actual changes made
+
 ## Project Overview
 
 **Dragonglass CLI** is a secure Obsidian plugin manager implementing supply chain security through:

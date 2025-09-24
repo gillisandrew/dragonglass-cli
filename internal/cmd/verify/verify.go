@@ -139,12 +139,16 @@ func verifyPlugin(imageRef string, cfg *config.Config) error {
 		return fmt.Errorf("failed to get authentication token for attestation verification: %w", err)
 	}
 
-	// Verify SLSA provenance attestation
-	fmt.Printf("🔍 Verifying SLSA provenance attestation...\n")
-	slsaVerifier := attestation.NewSLSAVerifier(token)
-	attestationResult, err := slsaVerifier.VerifyAttestation(ctx, imageRef)
+	// Verify all attestations (SLSA, SBOM, etc.)
+	fmt.Printf("🔍 Verifying attestations (SLSA, SBOM, etc.)...\n")
+	verifier, err := attestation.NewAttestationVerifier(token)
 	if err != nil {
-		return fmt.Errorf("failed to verify SLSA attestation: %w", err)
+		return fmt.Errorf("failed to create attestation verifier: %w", err)
+	}
+
+	attestationResult, err := verifier.VerifyAttestations(ctx, imageRef)
+	if err != nil {
+		return fmt.Errorf("failed to verify attestations: %w", err)
 	}
 
 	// Display debug warnings first
@@ -156,19 +160,34 @@ func verifyPlugin(imageRef string, cfg *config.Config) error {
 	}
 
 	// Display attestation verification results
-	fmt.Print(slsaVerifier.FormatVerificationResult(attestationResult))
+	fmt.Print(verifier.FormatVerificationResult(attestationResult))
 
 	// Check if attestation verification should block installation
 	if cfg.Verification.StrictMode && (!attestationResult.Found || !attestationResult.Valid) {
 		if !attestationResult.Found {
-			return fmt.Errorf("SLSA attestation not found (required in strict mode)")
+			return fmt.Errorf("attestations not found (required in strict mode)")
 		}
 		if !attestationResult.Valid {
-			return fmt.Errorf("SLSA attestation verification failed (required in strict mode)")
+			return fmt.Errorf("attestation verification failed (required in strict mode)")
 		}
 	}
 
-	fmt.Printf("📄 Note: SBOM verification not yet implemented\n")
+	// Additional SBOM-specific security checks
+	if attestationResult.SBOM != nil && len(attestationResult.SBOM.Vulnerabilities) > 0 {
+		highSeverityVulns := 0
+		for _, vuln := range attestationResult.SBOM.Vulnerabilities {
+			if vuln.Severity == "HIGH" || vuln.Severity == "CRITICAL" {
+				highSeverityVulns++
+			}
+		}
+
+		if highSeverityVulns > 0 {
+			fmt.Printf("⚠️  Found %d high/critical severity vulnerabilities\n", highSeverityVulns)
+			if cfg.Verification.StrictMode {
+				return fmt.Errorf("%d high/critical vulnerabilities found (blocked in strict mode)", highSeverityVulns)
+			}
+		}
+	}
 
 	return nil
 }
