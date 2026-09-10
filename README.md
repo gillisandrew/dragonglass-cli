@@ -1,3 +1,5 @@
+> **Archived.** This was an early rewrite that never reached parity with [dragonglass-poc](https://github.com/gillisandrew/dragonglass-poc), which has CI, signed releases, and the working plugin manager. Use that repository instead.
+
 # Dragonglass CLI
 
 A secure Obsidian plugin manager that performs verification of provenance and SBOM attestations with vulnerability scanning.
