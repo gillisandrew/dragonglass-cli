@@ -1,4 +1,4 @@
-> **Archived.** This was an early rewrite that never reached parity with [dragonglass-poc](https://github.com/gillisandrew/dragonglass-poc), which has CI, signed releases, and the working plugin manager. Use that repository instead.
+> **Archived.** An early rewrite of Dragonglass that never reached parity with the proof of concept. Both are now retired; the same goals continue in the [Shard plugin system](https://github.com/shard-for-obsidian/shard).
 
 # Dragonglass CLI
 
